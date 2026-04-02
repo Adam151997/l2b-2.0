@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>L2B.click - Business Intelligence Platform</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏢</text></svg>">
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <nav class="navbar">
+                <a href="#" class="logo">L2B.click</a>
+                <ul class="nav-links">
+                    <li><a href="#search">Search</a></li>
+                    <li><a href="#features">Features</a></li>
+                    <li><a href="#" onclick="showPricing()">Pricing</a></li>
+                    <li id="userMenu" style="display: none;">
+                        <a href="#" onclick="showUserMenu()" class="user-menu-trigger">
+                            <i class="fas fa-user"></i> 
+                            <span id="userEmail"></span>
+                            <i class="fas fa-chevron-down"></i>
+                        </a>
+                        <div class="user-dropdown" id="userDropdown">
+                            <div class="user-info">
+                                <strong id="dropdownEmail"></strong>
+                                <span class="user-plan" id="dropdownPlan"></span>
+                            </div>
+                            <div class="credits-info">
+                                <span>Credits: </span>
+                                <strong id="dropdownCredits"></strong>
+                            </div>
+                            <button class="btn btn-premium btn-sm" onclick="showUpgradeModal()">
+                                <i class="fas fa-crown"></i> Upgrade
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="logout()">
+                                <i class="fas fa-sign-out-alt"></i> Logout
+                            </button>
+                        </div>
+                    </li>
+                    <li id="authMenu">
+                        <button class="btn btn-primary btn-sm" onclick="showAuthModal()">
+                            <i class="fas fa-key"></i> Get API Key
+                        </button>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <section class="hero">
+        <div class="container">
+            <h1>Business Intelligence Made Simple</h1>
+            <p>Access 1.38M+ US businesses with AI-powered insights</p>
+            <div class="hero-stats">
+                <div class="stat">
+                    <div class="stat-number" id="totalBusinesses">1.38M+</div>
+                    <div class="stat-label">Businesses</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number" id="totalUsers">1K+</div>
+                    <div class="stat-label">Users</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number" id="totalIndustries">500+</div>
+                    <div class="stat-label">Industries</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="search-section" id="search">
+        <div class="container">
+            <h2>Find Your Next Business Opportunity</h2>
+            
+            <!-- User Status Bar -->
+            <div class="user-status-bar" id="userStatusBar" style="display: none;">
+                <div class="status-content">
+                    <div class="user-welcome">
+                        Welcome back, <strong id="welcomeEmail"></strong>!
+                        <span class="plan-badge" id="welcomePlan"></span>
+                    </div>
+                    <div class="credits-display">
+                        <i class="fas fa-coins"></i>
+                        <span id="remainingCredits">0</span> / <span id="totalCredits">0</span> credits remaining
+                    </div>
+                </div>
+            </div>
+
+            <form class="search-form" id="searchForm">
+                <div class="form-group">
+                    <label for="name">Business Name</label>
+                    <input type="text" id="name" placeholder="e.g., Tech Solutions Inc">
+                </div>
+                <div class="form-group">
+                    <label for="city">City</label>
+                    <input type="text" id="city" placeholder="e.g., New York">
+                </div>
+                <div class="form-group">
+                    <label for="state">State</label>
+                    <input type="text" id="state" placeholder="e.g., CA">
+                </div>
+                <div class="form-group">
+                    <label for="industry">Industry</label>
+                    <input type="text" id="industry" placeholder="e.g., Technology">
+                </div>
+                <button type="submit" class="search-button" id="searchBtn">
+                    <i class="fas fa-search"></i> Search Businesses
+                </button>
+            </form>
+        </div>
+    </section>
+
+    <section class="results-section" id="results" style="display: none;">
+        <div class="container">
+            <div class="results-header">
+                <div class="results-count" id="resultsCount">Loading...</div>
+                <div class="search-credits" id="searchCredits" style="display: none;">
+                    <i class="fas fa-coins"></i>
+                    <span>This search used 1 credit</span>
+                </div>
+            </div>
+            <div id="businessResults"></div>
+            <div id="pagination"></div>
+        </div>
+    </section>
+
+    <section class="features-section" id="features">
+        <div class="container">
+            <h2>Powerful Features</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <i class="fas fa-database"></i>
+                    <h3>1.38M+ Businesses</h3>
+                    <p>Comprehensive database of US registered businesses</p>
+                </div>
+                <div class="feature-card">
+                    <i class="fas fa-robot"></i>
+                    <h3>AI Insights</h3>
+                    <p>DeepSeek AI-powered business analysis</p>
+                </div>
+                <div class="feature-card">
+                    <i class="fas fa-search"></i>
+                    <h3>Smart Search</h3>
+                    <p>Advanced filtering by location and industry</p>
+                </div>
+                <div class="feature-card">
+                    <i class="fas fa-crown"></i>
+                    <h3>Premium Contacts</h3>
+                    <p>Access phone numbers, emails, and decision makers</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- All your existing modals remain exactly the same -->
+    <!-- Authentication Modal -->
+    <div class="modal" id="authModal">
+        <div class="modal-content">
+            <button class="close-modal" onclick="closeModal('authModal')">&times;</button>
+            <h3>Get Your API Key</h3>
+            <div class="auth-tabs">
+                <button class="tab-btn active" onclick="switchAuthTab('register')">Register</button>
+                <button class="tab-btn" onclick="switchAuthTab('login')">I Have an API Key</button>
+            </div>
+            
+            <div id="registerTab" class="auth-tab-content">
+                <form id="registerForm">
+                    <div class="form-group">
+                        <label for="registerEmail">Email Address</label>
+                        <input type="email" id="registerEmail" placeholder="your@email.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="registerPlan">Plan</label>
+                        <select id="registerPlan" required>
+                            <option value="free">Free (50 credits)</option>
+                            <option value="premium">Premium (1,000 credits)</option>
+                            <option value="enterprise">Enterprise (10,000 credits)</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-premium btn-block">
+                        <i class="fas fa-key"></i> Get API Key
+                    </button>
+                </form>
+            </div>
+            
+            <div id="loginTab" class="auth-tab-content" style="display: none;">
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label for="apiKey">Your API Key</label>
+                        <input type="password" id="apiKey" placeholder="l2b_xxxxxxxxxxxxxxxx" required>
+                        <small>Find your API key in your welcome email</small>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block">
+                        <i class="fas fa-sign-in-alt"></i> Connect API Key
+                    </button>
+                </form>
+            </div>
+            
+            <div class="auth-features">
+                <h4>What you get:</h4>
+                <ul>
+                    <li><i class="fas fa-check"></i> Access to 1.38M+ businesses</li>
+                    <li><i class="fas fa-check"></i> AI-powered insights</li>
+                    <li><i class="fas fa-check"></i> Premium contact information</li>
+                    <li><i class="fas fa-check"></i> Credit-based usage tracking</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- API Key Modal -->
+    <div class="modal" id="apiKeyModal">
+        <div class="modal-content">
+            <button class="close-modal" onclick="closeModal('apiKeyModal')">&times;</button>
+            <h3>Your API Key</h3>
+            <div class="api-key-success">
+                <i class="fas fa-key"></i>
+                <p>Save this API key securely - you won't see it again!</p>
+                <div class="api-key-display">
+                    <code id="apiKeyValue"></code>
+                    <button class="btn btn-secondary btn-sm" onclick="copyApiKey()">
+                        <i class="fas fa-copy"></i> Copy
+                    </button>
+                </div>
+                <div class="user-details">
+                    <p><strong>Email:</strong> <span id="apiKeyEmail"></span></p>
+                    <p><strong>Plan:</strong> <span id="apiKeyPlan"></span></p>
+                    <p><strong>Credits:</strong> <span id="apiKeyCredits"></span></p>
+                </div>
+                <button class="btn btn-primary btn-block" onclick="closeModal('apiKeyModal'); loadUserProfile();">
+                    <i class="fas fa-rocket"></i> Start Searching
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upgrade Modal -->
+    <div class="modal" id="upgradeModal">
+        <div class="modal-content">
+            <button class="close-modal" onclick="closeModal('upgradeModal')">&times;</button>
+            <h3>Upgrade Your Plan</h3>
+            <div class="current-plan" id="currentPlanInfo">
+                <!-- Current plan info will be loaded here -->
+            </div>
+            <div class="pricing-grid">
+                <div class="pricing-card">
+                    <h4>Free</h4>
+                    <div class="price">$0</div>
+                    <ul>
+                        <li>50 credits</li>
+                        <li>Basic business search</li>
+                        <li>AI insights (5/month)</li>
+                        <li>Company information</li>
+                    </ul>
+                    <button class="btn btn-secondary" disabled>Current Plan</button>
+                </div>
+                <div class="pricing-card premium">
+                    <h4>Premium</h4>
+                    <div class="price">$49<span>/month</span></div>
+                    <ul>
+                        <li>1,000 credits</li>
+                        <li>Premium contact details</li>
+                        <li>Unlimited AI insights</li>
+                        <li>Advanced filters</li>
+                        <li>Priority support</li>
+                    </ul>
+                    <button class="btn btn-premium" onclick="upgradePlan('premium')">
+                        Upgrade to Premium
+                    </button>
+                </div>
+                <div class="pricing-card enterprise">
+                    <h4>Enterprise</h4>
+                    <div class="price">$199<span>/month</span></div>
+                    <ul>
+                        <li>10,000 credits</li>
+                        <li>API access</li>
+                        <li>White-label options</li>
+                        <li>Dedicated support</li>
+                        <li>Custom integrations</li>
+                    </ul>
+                    <button class="btn btn-premium" onclick="upgradePlan('enterprise')">
+                        Upgrade to Enterprise
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Contact Modal -->
+    <div class="modal" id="contactModal">
+        <div class="modal-content">
+            <button class="close-modal" onclick="closeModal('contactModal')">&times;</button>
+            <h3>Contact Information</h3>
+            <div id="contactDetails">
+                <!-- Contact details will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Insights Modal -->
+    <div class="modal" id="insightsModal">
+        <div class="modal-content">
+            <button class="close-modal" onclick="closeModal('insightsModal')">&times;</button>
+            <h3>AI Business Insights</h3>
+            <div id="insightsContent">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Generating AI insights...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pricing Modal -->
+    <div class="modal" id="pricingModal">
+        <div class="modal-content">
+            <button class="close-modal" onclick="closeModal('pricingModal')">&times;</button>
+            <h3>Pricing Plans</h3>
+            <div class="pricing-grid">
+                <div class="pricing-card">
+                    <h4>Free Tier</h4>
+                    <div class="price">$0</div>
+                    <ul>
+                        <li>50 credits</li>
+                        <li>Basic business search</li>
+                        <li>AI insights (limited)</li>
+                        <li>Company information</li>
+                    </ul>
+                    <button class="btn btn-secondary" onclick="showAuthModal()">Get Started</button>
+                </div>
+                <div class="pricing-card premium">
+                    <h4>Premium</h4>
+                    <div class="price">$49<span>/month</span></div>
+                    <ul>
+                        <li>1,000 credits</li>
+                        <li>Premium contact details</li>
+                        <li>Unlimited AI insights</li>
+                        <li>Advanced filters</li>
+                    </ul>
+                    <button class="btn btn-premium" onclick="showAuthModal()">Get Started</button>
+                </div>
+                <div class="pricing-card enterprise">
+                    <h4>Enterprise</h4>
+                    <div class="price">$199<span>/month</span></div>
+                    <ul>
+                        <li>10,000 credits</li>
+                        <li>API access</li>
+                        <li>White-label options</li>
+                        <li>Custom integrations</li>
+                    </ul>
+                    <button class="btn btn-premium" onclick="showAuthModal()">Get Started</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 L2B.click. All rights reserved.</p>
+            <p>Powered by DeepSeek AI • 1.38M+ US Businesses</p>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
