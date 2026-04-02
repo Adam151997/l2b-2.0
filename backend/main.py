@@ -17,14 +17,23 @@ from datetime import datetime
 import secrets
 import hashlib
 
-# Load environment variables
-load_dotenv()
+# Load environment variables - only load .env file in development
+load_dotenv()  # This loads .env for local dev but Railway env vars take precedence
 
-# Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Database configuration - Support multiple hosting platforms
+# Railway provides DATABASE_URL or POSTGRES_URL
+# IMPORTANT: Railway sets these as actual environment variables that override .env
+database_url = os.getenv("DATABASE_URL")
+postgres_url = os.getenv("POSTGRES_URL")
+
+print(f"DEBUG: DATABASE_URL from env: {database_url[:30] + '...' if database_url else 'NOT SET'}")
+print(f"DEBUG: POSTGRES_URL from env: {postgres_url[:30] + '...' if postgres_url else 'NOT SET'}")
+
+DATABASE_URL = database_url or postgres_url
 if not DATABASE_URL:
-    # Fallback to localhost for development
+    # Fallback to localhost for development only
     DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/l2b"
+    print("WARNING: No database URL from environment - using localhost fallback")
 
 # DeepSeek AI configuration - MUST be set in environment for production
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
