@@ -299,11 +299,8 @@ async function loadStats() {
 document.getElementById('searchForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     
-    if (!currentUser) {
-        showAuthModal();
-        return;
-    }
-
+    // Anyone can search - no login required!
+    
     const name = document.getElementById('name').value;
     const city = document.getElementById('city').value;
     const state = document.getElementById('state').value;
@@ -421,17 +418,8 @@ function displayResults(data) {
 
 // Show contact modal
 async function showContactModal(businessId) {
-    if (!currentUser) {
-        showAuthModal();
-        return;
-    }
-
-    if (currentUser.plan === 'free') {
-        showNotification('Premium plan required for contact information', 'error');
-        showUpgradeModal();
-        return;
-    }
-
+    // Anyone can view contacts - no login required!
+    
     const modal = document.getElementById('contactModal');
     const contactDetails = document.getElementById('contactDetails');
     
@@ -446,11 +434,7 @@ async function showContactModal(businessId) {
     `;
 
     try {
-        const response = await fetch(`${API_BASE}/api/businesses/${businessId}/contact`, {
-            headers: {
-                'X-API-Key': currentUser.apiKey
-            }
-        });
+        const response = await fetch(`${API_BASE}/api/businesses/${businessId}/contact`);
 
         if (response.status === 402) {
             contactDetails.innerHTML = `

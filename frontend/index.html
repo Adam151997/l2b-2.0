@@ -20,34 +20,7 @@
                     <li><a href="#search">Search</a></li>
                     <li><a href="#features">Features</a></li>
                     <li><a href="#" onclick="showPricing()">Pricing</a></li>
-                    <li id="userMenu" style="display: none;">
-                        <a href="#" onclick="showUserMenu()" class="user-menu-trigger">
-                            <i class="fas fa-user"></i> 
-                            <span id="userEmail"></span>
-                            <i class="fas fa-chevron-down"></i>
-                        </a>
-                        <div class="user-dropdown" id="userDropdown">
-                            <div class="user-info">
-                                <strong id="dropdownEmail"></strong>
-                                <span class="user-plan" id="dropdownPlan"></span>
-                            </div>
-                            <div class="credits-info">
-                                <span>Credits: </span>
-                                <strong id="dropdownCredits"></strong>
-                            </div>
-                            <button class="btn btn-premium btn-sm" onclick="showUpgradeModal()">
-                                <i class="fas fa-crown"></i> Upgrade
-                            </button>
-                            <button class="btn btn-secondary btn-sm" onclick="logout()">
-                                <i class="fas fa-sign-out-alt"></i> Logout
-                            </button>
-                        </div>
-                    </li>
-                    <li id="authMenu">
-                        <button class="btn btn-primary btn-sm" onclick="showAuthModal()">
-                            <i class="fas fa-key"></i> Get API Key
-                        </button>
-                    </li>
+                    
                 </ul>
             </nav>
         </div>
@@ -78,20 +51,6 @@
         <div class="container">
             <h2>Find Your Next Business Opportunity</h2>
             
-            <!-- User Status Bar -->
-            <div class="user-status-bar" id="userStatusBar" style="display: none;">
-                <div class="status-content">
-                    <div class="user-welcome">
-                        Welcome back, <strong id="welcomeEmail"></strong>!
-                        <span class="plan-badge" id="welcomePlan"></span>
-                    </div>
-                    <div class="credits-display">
-                        <i class="fas fa-coins"></i>
-                        <span id="remainingCredits">0</span> / <span id="totalCredits">0</span> credits remaining
-                    </div>
-                </div>
-            </div>
-
             <form class="search-form" id="searchForm">
                 <div class="form-group">
                     <label for="name">Business Name</label>
@@ -120,10 +79,6 @@
         <div class="container">
             <div class="results-header">
                 <div class="results-count" id="resultsCount">Loading...</div>
-                <div class="search-credits" id="searchCredits" style="display: none;">
-                    <i class="fas fa-coins"></i>
-                    <span>This search used 1 credit</span>
-                </div>
             </div>
             <div id="businessResults"></div>
             <div id="pagination"></div>
