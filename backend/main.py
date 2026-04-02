@@ -418,17 +418,9 @@ async def search_businesses(
     industry: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
-    user: Dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Search businesses - REQUIRES API KEY"""
-    
-    # Use credit for search
-    if not user_manager.use_credit(user["api_key"], "basic_search"):
-        raise HTTPException(
-            status_code=402,
-            detail="Insufficient credits. Please upgrade your plan."
-        )
+    """Search businesses - Free, no authentication required"""
     
     query = "SELECT id, legal_business_name, business_city, business_state, business_country, industry_sector, primary_naics FROM businesses WHERE 1=1"
     params = {}
@@ -482,19 +474,16 @@ async def search_businesses(
             "limit": limit,
             "total": total_count,
             "pages": (total_count + limit - 1) // limit
-        },
-        "user_credits_used": user["credits_used"],
-        "user_credits_remaining": user["max_credits"] - user["credits_used"]
+        }
     }
 
 @app.get("/api/businesses/{business_id}")
 async def get_business(
     business_id: int,
     premium: bool = Query(False),
-    user: Dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get business details - REQUIRES API KEY"""
+    """Get business details - Free, no authentication required"""
     
     if premium:
         query = "SELECT * FROM businesses WHERE id = :id"
@@ -528,8 +517,7 @@ async def get_business(
     
     return {
         "data": business_data,
-        "tier": "premium" if premium else "free",
-        "user_plan": user["plan"]
+        "tier": "premium" if premium else "free"
     }
 
 @app.get("/api/businesses/{business_id}/contact")

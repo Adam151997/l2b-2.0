@@ -323,11 +323,7 @@ document.getElementById('searchForm').addEventListener('submit', async (e) => {
 
 // Search businesses
 async function searchBusinesses(params) {
-    if (!currentUser) {
-        showNotification('Please log in first', 'error');
-        return;
-    }
-
+    // No authentication required - free search for everyone
     showLoading();
     
     try {
@@ -338,28 +334,8 @@ async function searchBusinesses(params) {
         if (params.industry) queryParams.append('industry', params.industry);
         queryParams.append('page', params.page);
         queryParams.append('limit', params.limit);
-
-        console.log('Searching with API key:', currentUser.apiKey.substring(0, 10) + '...');
         
-        const response = await fetch(`${API_BASE}/api/businesses/search?${queryParams}`, {
-            headers: {
-                'X-API-Key': currentUser.apiKey
-            }
-        });
-
-        console.log('Search response status:', response.status);
-
-        if (response.status === 402) {
-            showError('Insufficient credits. Please upgrade your plan.');
-            showUpgradeModal();
-            return;
-        }
-
-        if (response.status === 401) {
-            showError('Invalid API key. Please log in again.');
-            logout();
-            return;
-        }
+        const response = await fetch(`${API_BASE}/api/businesses/search?${queryParams}`);
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
