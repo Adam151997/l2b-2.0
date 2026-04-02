@@ -263,7 +263,6 @@ async function showContactModal(businessId) {
                     <h4>${data.business_name}</h4>
                     <p><i class="fas fa-map-marker-alt"></i> ${data.premium_contact.address}</p>
                     <p><i class="fas fa-envelope"></i> ${data.premium_contact.email}</p>
-                    <p><i class="fas fa-phone"></i> ${data.premium_contact.phone}</p>
                     <p><i class="fas fa-globe"></i> ${data.premium_contact.website}</p>
                     <p><i class="fab fa-linkedin"></i> ${data.premium_contact.linkedin}</p>
                 </div>

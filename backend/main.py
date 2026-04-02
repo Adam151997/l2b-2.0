@@ -633,7 +633,6 @@ async def get_business_contact(
         
         return {
             "premium_contact": {
-                "phone": "Contact phone available in enterprise dataset",
                 "email": f"info@{business_name_clean}.com", 
                 "address": full_address,
                 "contact_person": "Business Development Manager",
