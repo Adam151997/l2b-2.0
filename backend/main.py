@@ -29,8 +29,16 @@ def get_database_url():
     # Check Railway-specific variables first
     # Railway sets DATABASE_URL when you link a PostgreSQL service
     
+    # IMPORTANT: Railway uses "Database_URL" (capital D) not "DATABASE_URL"
+    # Check both cases
+    
     # Method 1: Standard DATABASE_URL (Railway, Heroku, etc.)
     db_url = os.environ.get("DATABASE_URL")
+    if db_url:
+        return db_url
+    
+    # Method 1b: Capital D variant (Railway sometimes uses this)
+    db_url = os.environ.get("Database_URL")
     if db_url:
         return db_url
     
@@ -39,10 +47,12 @@ def get_database_url():
     if db_url:
         return db_url
     
-    # Method 3: Check for Railway proxy URL format
+    # Method 3: Check for Railway proxy URL format (case-insensitive)
     for key, value in os.environ.items():
-        if key.upper().endswith("URL") and "POSTGRES" in key.upper():
+        key_upper = key.upper()
+        if "POSTGRES" in key_upper and "URL" in key_upper:
             if "proxy.rlwy.net" in value or "railway.internal" in value:
+                print(f"Found database URL in env var: {key} = {value[:30]}...")
                 return value
     
     # Method 4: PostgreSQL on Railway might use this
