@@ -65,6 +65,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Serve frontend static files in production
+import os
+if os.path.exists("../frontend"):
+    app.mount("/", StaticFiles(directory="../frontend", html=True), name="frontend")
+
 # Database setup
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
