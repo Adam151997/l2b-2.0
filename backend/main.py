@@ -18,41 +18,70 @@ import secrets
 import hashlib
 
 # Load environment variables
-# Never load .env file in production - Railway provides real env vars
-# The .env file likely contains localhost fallback which overrides Railway vars
-load_dotenv()  # Safe because Railway vars are set AFTER this in the environment
+load_dotenv()
 
-# Database configuration - Support multiple hosting platforms
-# Railway provides DATABASE_URL or POSTGRES_URL
+# =============================================================================
+# DATABASE CONFIGURATION - RAILWAY COMPATIBLE
+# =============================================================================
 
-print("=== RAILWAY ENVIRONMENT CHECK ===")
-import sys
-print(f"Python version: {sys.version}")
+def get_database_url():
+    """Get database URL from Railway or other hosting platforms"""
+    # Check Railway-specific variables first
+    # Railway sets DATABASE_URL when you link a PostgreSQL service
+    
+    # Method 1: Standard DATABASE_URL (Railway, Heroku, etc.)
+    db_url = os.environ.get("DATABASE_URL")
+    if db_url:
+        return db_url
+    
+    # Method 2: Railway's internal URL (sometimes used)
+    db_url = os.environ.get("POSTGRES_URL")
+    if db_url:
+        return db_url
+    
+    # Method 3: Check for Railway proxy URL format
+    for key, value in os.environ.items():
+        if key.upper().endswith("URL") and "POSTGRES" in key.upper():
+            if "proxy.rlwy.net" in value or "railway.internal" in value:
+                return value
+    
+    # Method 4: PostgreSQL on Railway might use this
+    db_url = os.environ.get("PGDATABASE_URL")
+    if db_url:
+        return db_url
+    
+    return None
 
-# List ALL environment variables (sanitized) for debugging
-for key in sorted(os.environ.keys()):
-    if any(x in key.upper() for x in ['DATABASE', 'POSTGRES', 'PG', 'RAILWAY']):
-        val = os.environ[key]
-        # Don't print full credentials
-        if '://' in val:
-            parts = val.split('://')
-            if len(parts) > 1:
-                val = parts[0] + '://' + parts[1].split('@')[0] + '@***'
-        print(f"  {key} = {val}")
+DATABASE_URL = get_database_url()
 
-# Use DATABASE_URL if available
-DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
+print("=== DATABASE CONNECTION DEBUG ===")
+print(f"DATABASE_URL source check: {repr(DATABASE_URL)[:80] if DATABASE_URL else 'NOT FOUND'}")
 
+# IMPORTANT: In production, we should NOT have a fallback to localhost
+# If DATABASE_URL is None, the app will fail - which is correct behavior
 if not DATABASE_URL:
-    # Fallback to localhost for development only
-    DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/l2b"
-    print("WARNING: No database URL from environment - using localhost fallback")
+    print("ERROR: No DATABASE_URL found!")
+    print(f"All env vars with 'DATA': {[k for k in os.environ.keys() if 'DATA' in k.upper()]}")
+    # Don't set a fallback - let the app crash so we can see the error
+    DATABASE_URL = None
 else:
-    print(f"SUCCESS: Using Railway database URL: {DATABASE_URL[:30]}...")
+    print(f"SUCCESS: Database URL found: {DATABASE_URL[:40]}...")
 
 # DeepSeek AI configuration - MUST be set in environment for production
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+
+# Initialize database engine - will fail gracefully if no DATABASE_URL
+if DATABASE_URL:
+    engine = create_engine(DATABASE_URL)
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    print("Database engine initialized successfully")
+else:
+    # Create a dummy engine that will fail on use
+    # This allows the app to start but all DB operations will fail
+    print("WARNING: Starting without database connection - all search will fail")
+    engine = None
+    SessionLocal = None
 
 print(f"Database URL: {DATABASE_URL[:50]}..." if DATABASE_URL else "Database URL: NOT CONFIGURED")
 print(f"DeepSeek API Key: {'✅ Configured' if DEEPSEEK_API_KEY and DEEPSEEK_API_KEY.startswith('sk-') else '⚠️ NOT CONFIGURED - Set DEEPSEEK_API_KEY environment variable'}")
@@ -81,10 +110,6 @@ app.add_middleware(
 )
 
 
-
-# Database setup
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Pydantic models
 class BusinessBasic(BaseModel):
