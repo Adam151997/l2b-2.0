@@ -65,32 +65,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve frontend static files in production
-# Need to use a custom approach to serve both HTML and static assets correctly
-import os
-from fastapi.responses import FileResponse
 
-frontend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
-
-@app.get("/{full_path:path}")
-async def serve_frontend(full_path: str):
-    """Serve frontend files - serves index.html for SPA, or specific files if they exist"""
-    # First check if it's an API path
-    if full_path.startswith("api/") or full_path in ["api", "docs", "redoc", "openapi.json", "health"]:
-        from fastapi.responses import JSONResponse
-        return JSONResponse({"detail": "Not found"}, status_code=404)
-    
-    # Check if the requested file exists
-    file_path = os.path.join(frontend_path, full_path)
-    if os.path.isfile(file_path):
-        return FileResponse(file_path)
-    
-    # Otherwise serve index.html for SPA behavior
-    index_path = os.path.join(frontend_path, "index.html")
-    if os.path.isfile(index_path):
-        return FileResponse(index_path)
-    
-    return {"error": "File not found"}
 
 # Database setup
 engine = create_engine(DATABASE_URL)
@@ -832,32 +807,21 @@ async def get_stats(db: Session = Depends(get_db)):
 BACKEND_DIR = Path(__file__).parent
 FRONTEND_DIR = BACKEND_DIR.parent / "frontend"
 
-# Mount static files for frontend assets
-@app.get("/frontend/{file_path:path}")
-async def serve_frontend_files(file_path: str):
-    """Serve frontend static files"""
-    file_path = FRONTEND_DIR / file_path
-    if file_path.exists():
-        return FileResponse(file_path)
-    return {"error": "File not found"}
-
-# Serve index.html at root for SPA
+# Serve index.html at root
 @app.get("/")
 async def serve_index():
     """Serve the main index.html"""
     index_path = FRONTEND_DIR / "index.html"
     if index_path.exists():
         return FileResponse(index_path)
-    return {"message": "L2B.click API - Use /docs for API documentation"}
+    return {"message": "L2B.click - Use /docs for API documentation"}
 
-# Fallback to index.html for SPA routes (client-side routing)
+# Fallback - serve index.html for SPA routes (but NOT API)
 @app.get("/{path:path}")
 async def serve_spa(path: str):
-    """Serve index.html for SPA routes"""
-    # Don't override API routes
-    if path.startswith("api/"):
-        raise HTTPException(status_code=404, detail="API endpoint not found")
-    
+    """Serve index.html for frontend routes"""
+    # Let FastAPI handle API routes - they should already be handled
+    # This is the catch-all for frontend SPA
     index_path = FRONTEND_DIR / "index.html"
     if index_path.exists():
         return FileResponse(index_path)
