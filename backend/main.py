@@ -36,11 +36,17 @@ def get_database_url():
         """Extract actual URL from potentially malformed env var value"""
         if not value:
             return None
-        # If value contains = sign, it might be "KEY=URL" format
+        
+        # Strip surrounding quotes if present (Railway might set "Database_URL" with quotes)
+        value = value.strip('"\'')
+        
+        # If value contains = sign after stripping quotes, it might be "KEY=URL" format
         if '=' in value:
             # Try to find the actual URL after any key= pattern
             parts = value.split('=', 1)
             url_part = parts[-1].strip()
+            # Strip quotes again in case URL has quotes
+            url_part = url_part.strip('"\'')
             # If it looks like a URL (has ://), return it
             if '://' in url_part:
                 return url_part
