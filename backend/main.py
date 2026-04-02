@@ -871,7 +871,14 @@ async def serve_index():
     """Serve the main index.html"""
     index_path = FRONTEND_DIR / "index.html"
     if index_path.exists():
-        return FileResponse(index_path)
+        return FileResponse(
+            index_path,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
     return {"message": "L2B.click - Use /docs for API documentation"}
 
 # Serve static files (CSS, JS, images)
@@ -880,14 +887,30 @@ async def serve_css():
     """Serve styles.css"""
     css_path = FRONTEND_DIR / "styles.css"
     if css_path.exists():
-        return FileResponse(css_path, media_type="text/css")
+        return FileResponse(
+            css_path,
+            media_type="text/css",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
 
 @app.get("/script.js")
 async def serve_js():
     """Serve script.js"""
     js_path = FRONTEND_DIR / "script.js"
     if js_path.exists():
-        return FileResponse(js_path, media_type="application/javascript")
+        return FileResponse(
+            js_path,
+            media_type="application/javascript",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
 
 # Fallback - serve index.html for SPA routes (but NOT API)
 @app.get("/{path:path}")
@@ -897,5 +920,12 @@ async def serve_spa(path: str):
     # This is the catch-all for frontend SPA
     index_path = FRONTEND_DIR / "index.html"
     if index_path.exists():
-        return FileResponse(index_path)
+        return FileResponse(
+            index_path,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
     return {"error": "Not found"}
