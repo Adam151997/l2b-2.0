@@ -29,36 +29,59 @@ def get_database_url():
     # Check Railway-specific variables first
     # Railway sets DATABASE_URL when you link a PostgreSQL service
     
-    # IMPORTANT: Railway uses "Database_URL" (capital D) not "DATABASE_URL"
-    # Check both cases
+    # IMPORTANT: Railway sometimes includes the key name in the value
+    # e.g., "Database_URL=postgresql://..." - need to strip the key
+    
+    def extract_url(value):
+        """Extract actual URL from potentially malformed env var value"""
+        if not value:
+            return None
+        # If value contains = sign, it might be "KEY=URL" format
+        if '=' in value:
+            # Try to find the actual URL after any key= pattern
+            parts = value.split('=', 1)
+            url_part = parts[-1].strip()
+            # If it looks like a URL (has ://), return it
+            if '://' in url_part:
+                return url_part
+            # Otherwise, try the whole thing
+            if '://' in value:
+                return value
+            return None
+        return value
     
     # Method 1: Standard DATABASE_URL (Railway, Heroku, etc.)
     db_url = os.environ.get("DATABASE_URL")
     if db_url:
-        return db_url
+        return extract_url(db_url)
     
     # Method 1b: Capital D variant (Railway sometimes uses this)
     db_url = os.environ.get("Database_URL")
     if db_url:
-        return db_url
+        extracted = extract_url(db_url)
+        if extracted:
+            print(f"Extracted URL from Database_URL: {extracted[:40]}...")
+            return extracted
     
     # Method 2: Railway's internal URL (sometimes used)
     db_url = os.environ.get("POSTGRES_URL")
     if db_url:
-        return db_url
+        return extract_url(db_url)
     
     # Method 3: Check for Railway proxy URL format (case-insensitive)
     for key, value in os.environ.items():
         key_upper = key.upper()
         if "POSTGRES" in key_upper and "URL" in key_upper:
             if "proxy.rlwy.net" in value or "railway.internal" in value:
-                print(f"Found database URL in env var: {key} = {value[:30]}...")
-                return value
+                extracted = extract_url(value)
+                if extracted:
+                    print(f"Found database URL in env var: {key} = {extracted[:30]}...")
+                    return extracted
     
     # Method 4: PostgreSQL on Railway might use this
     db_url = os.environ.get("PGDATABASE_URL")
     if db_url:
-        return db_url
+        return extract_url(db_url)
     
     return None
 
