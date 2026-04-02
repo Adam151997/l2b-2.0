@@ -17,23 +17,38 @@ from datetime import datetime
 import secrets
 import hashlib
 
-# Load environment variables - only load .env file in development
-load_dotenv()  # This loads .env for local dev but Railway env vars take precedence
+# Load environment variables
+# Never load .env file in production - Railway provides real env vars
+# The .env file likely contains localhost fallback which overrides Railway vars
+load_dotenv()  # Safe because Railway vars are set AFTER this in the environment
 
 # Database configuration - Support multiple hosting platforms
 # Railway provides DATABASE_URL or POSTGRES_URL
-# IMPORTANT: Railway sets these as actual environment variables that override .env
-database_url = os.getenv("DATABASE_URL")
-postgres_url = os.getenv("POSTGRES_URL")
 
-print(f"DEBUG: DATABASE_URL from env: {database_url[:30] + '...' if database_url else 'NOT SET'}")
-print(f"DEBUG: POSTGRES_URL from env: {postgres_url[:30] + '...' if postgres_url else 'NOT SET'}")
+print("=== RAILWAY ENVIRONMENT CHECK ===")
+import sys
+print(f"Python version: {sys.version}")
 
-DATABASE_URL = database_url or postgres_url
+# List ALL environment variables (sanitized) for debugging
+for key in sorted(os.environ.keys()):
+    if any(x in key.upper() for x in ['DATABASE', 'POSTGRES', 'PG', 'RAILWAY']):
+        val = os.environ[key]
+        # Don't print full credentials
+        if '://' in val:
+            parts = val.split('://')
+            if len(parts) > 1:
+                val = parts[0] + '://' + parts[1].split('@')[0] + '@***'
+        print(f"  {key} = {val}")
+
+# Use DATABASE_URL if available
+DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
+
 if not DATABASE_URL:
     # Fallback to localhost for development only
     DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/l2b"
     print("WARNING: No database URL from environment - using localhost fallback")
+else:
+    print(f"SUCCESS: Using Railway database URL: {DATABASE_URL[:30]}...")
 
 # DeepSeek AI configuration - MUST be set in environment for production
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
@@ -378,27 +393,6 @@ def call_deepseek_ai(prompt: str) -> Dict[str, Any]:
 # =============================================================================
 # EXISTING ENDPOINTS (ENHANCED WITH USER SYSTEM)
 # =============================================================================
-
-@app.get("/")
-async def root():
-    return {
-        "message": "L2B.click Business Intelligence API",
-        "version": "1.0.0",
-        "status": "online",
-        "ai_available": DEEPSEEK_API_KEY and DEEPSEEK_API_KEY.startswith('sk-'),
-        "endpoints": {
-            "search": "/api/businesses/search",
-            "get_business": "/api/businesses/{id}",
-            "ai_insights": "/api/businesses/{id}/ai-insights",
-            "premium_contact": "/api/businesses/{id}/contact",
-            "user_register": "/api/users/register",
-            "user_profile": "/api/users/profile",
-            "user_upgrade": "/api/users/upgrade",
-            "industries": "/api/industries",
-            "stats": "/api/stats",
-            "health": "/health"
-        }
-    }
 
 @app.get("/health")
 async def health_check():
