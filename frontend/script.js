@@ -98,8 +98,8 @@ async function searchBusinesses(params) {
         }
 
         const data = await response.json();
-        
-        currentResults = data.data;
+        log('Results received:', data.data.length, 'businesses');
+        alert('Got ' + data.data.length + ' results!'); // Debug
         currentPage = params.page;
         
         displayResults(data.data);
@@ -107,6 +107,7 @@ async function searchBusinesses(params) {
 
     } catch (error) {
         logError('Search failed:', error);
+        alert('Search error: ' + error.message); // Debug
         showError('Search failed: ' + error.message);
     }
 }
