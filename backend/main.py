@@ -644,10 +644,7 @@ async def get_business_contact(
                 "industry": industry_name
             },
             "business_id": business_data[0],
-            "business_name": business_data[1],
-            "tier": "premium",
-            "user_plan": user["plan"],
-            "credits_used": user["credits_used"]
+            "business_name": business_data[1]
         }
         
     except Exception as e:

@@ -258,14 +258,29 @@ async function showContactModal(businessId) {
 
         const data = await response.json();
         
-        contactDetails.innerHTML = `
-            <div class="contact-info">
-                <h4>${data.business_name}</h4>
-                <p><i class="fas fa-map-marker-alt"></i> ${data.address}</p>
-                <p><i class="fas fa-globe"></i> ${data.country}</p>
-                <p><i class="fas fa-hashtag"></i> CAGE Code: ${data.cage_code}</p>
-            </div>
-        `;
+        if (data.premium_contact) {
+            // New format
+            contactDetails.innerHTML = `
+                <div class="contact-info">
+                    <h4>${data.business_name}</h4>
+                    <p><i class="fas fa-map-marker-alt"></i> ${data.premium_contact.address}</p>
+                    <p><i class="fas fa-envelope"></i> ${data.premium_contact.email}</p>
+                    <p><i class="fas fa-phone"></i> ${data.premium_contact.phone}</p>
+                    <p><i class="fas fa-globe"></i> ${data.premium_contact.website}</p>
+                    <p><i class="fab fa-linkedin"></i> ${data.premium_contact.linkedin}</p>
+                </div>
+            `;
+        } else {
+            // Old format fallback
+            contactDetails.innerHTML = `
+                <div class="contact-info">
+                    <h4>${data.business_name}</h4>
+                    <p><i class="fas fa-map-marker-alt"></i> ${data.address}</p>
+                    <p><i class="fas fa-globe"></i> ${data.country}</p>
+                    <p><i class="fas fa-hashtag"></i> CAGE Code: ${data.cage_code}</p>
+                </div>
+            `;
+        }
 
     } catch (error) {
         contactDetails.innerHTML = `
