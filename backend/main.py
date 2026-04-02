@@ -66,9 +66,31 @@ app.add_middleware(
 )
 
 # Serve frontend static files in production
+# Need to use a custom approach to serve both HTML and static assets correctly
 import os
-if os.path.exists("../frontend"):
-    app.mount("/", StaticFiles(directory="../frontend", html=True), name="frontend")
+from fastapi.responses import FileResponse
+
+frontend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
+
+@app.get("/{full_path:path}")
+async def serve_frontend(full_path: str):
+    """Serve frontend files - serves index.html for SPA, or specific files if they exist"""
+    # First check if it's an API path
+    if full_path.startswith("api/") or full_path in ["api", "docs", "redoc", "openapi.json", "health"]:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+    
+    # Check if the requested file exists
+    file_path = os.path.join(frontend_path, full_path)
+    if os.path.isfile(file_path):
+        return FileResponse(file_path)
+    
+    # Otherwise serve index.html for SPA behavior
+    index_path = os.path.join(frontend_path, "index.html")
+    if os.path.isfile(index_path):
+        return FileResponse(index_path)
+    
+    return {"error": "File not found"}
 
 # Database setup
 engine = create_engine(DATABASE_URL)
