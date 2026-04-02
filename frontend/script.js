@@ -3,12 +3,24 @@
 
 const API_BASE = '';  // Same origin
 
+// Debug mode
+const DEBUG = true;
+
+function log(...args) {
+    if (DEBUG) console.log('[L2B]', ...args);
+}
+
+function logError(...args) {
+    if (DEBUG) console.error('[L2B ERROR]', ...args);
+}
+
 // State
 let currentPage = 1;
 let currentResults = [];
 
 // Initialize the app
 document.addEventListener('DOMContentLoaded', function() {
+    log('App initializing...');
     loadStats();
 });
 
@@ -62,6 +74,7 @@ document.getElementById('searchForm').addEventListener('submit', async (e) => {
 
 // Search businesses
 async function searchBusinesses(params) {
+    log('Searching with params:', params);
     showLoading();
     
     try {
@@ -73,7 +86,11 @@ async function searchBusinesses(params) {
         queryParams.append('page', params.page);
         queryParams.append('limit', params.limit);
         
-        const response = await fetch(`${API_BASE}/api/businesses/search?${queryParams}`);
+        const url = `${API_BASE}/api/businesses/search?${queryParams}`;
+        log('Fetching:', url);
+        
+        const response = await fetch(url);
+        log('Response status:', response.status);
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
@@ -89,6 +106,7 @@ async function searchBusinesses(params) {
         displayPagination(data.pagination);
 
     } catch (error) {
+        logError('Search failed:', error);
         showError('Search failed: ' + error.message);
     }
 }
