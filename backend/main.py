@@ -523,17 +523,9 @@ async def get_business(
 @app.get("/api/businesses/{business_id}/contact")
 async def get_business_contact(
     business_id: int,
-    user: Dict = Depends(require_premium_user),
     db: Session = Depends(get_db)
 ):
-    """Premium contact information - REQUIRES PREMIUM PLAN"""
-    
-    # Use credit for premium contact
-    if not user_manager.use_credit(user["api_key"], "premium_contacts"):
-        raise HTTPException(
-            status_code=402,
-            detail="Insufficient credits. Please upgrade your plan."
-        )
+    """Contact information - Free, no authentication required"""
     
     try:
         # Get business data for professional contact info
@@ -597,17 +589,9 @@ async def get_business_contact(
 async def generate_ai_insights(
     business_id: int,
     request: AIGenerateRequest,
-    user: Dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Generate AI insights for a business - REQUIRES API KEY"""
-    
-    # Use credit for AI insights
-    if not user_manager.use_credit(user["api_key"], "ai_insights"):
-        raise HTTPException(
-            status_code=402,
-            detail="Insufficient credits. Please upgrade your plan."
-        )
+    """Generate AI insights for a business - Free, no authentication required"""
     
     # Get business data
     query = """
