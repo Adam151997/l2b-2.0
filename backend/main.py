@@ -542,6 +542,7 @@ async def search_businesses(
             "page": page,
             "limit": limit,
             "total": total_count,
+            "pages": (total_count + limit - 1) // limit,
             "total_pages": (total_count + limit - 1) // limit
         }
     }
