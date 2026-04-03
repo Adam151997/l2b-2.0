@@ -542,7 +542,7 @@ async def search_businesses(
             "page": page,
             "limit": limit,
             "total": total_count,
-            "pages": (total_count + limit - 1) // limit
+            "total_pages": (total_count + limit - 1) // limit
         }
     }
 
@@ -844,7 +844,7 @@ async def get_industries(db: Session = Depends(get_db)):
 async def get_stats(db: Session = Depends(get_db)):
     total_businesses = db.execute(text("SELECT COUNT(*) FROM businesses")).scalar()
     total_states = db.execute(text("SELECT COUNT(DISTINCT business_state) FROM businesses")).scalar()
-    total_industries = db.execute(text("SELECT COUNT(DISTINCT industry_sector) FROM businesses")).scalar()
+    total_industries = db.execute(text("SELECT COUNT(DISTINCT primary_naics) FROM businesses")).scalar()
     
     return {
         "total_businesses": total_businesses,
