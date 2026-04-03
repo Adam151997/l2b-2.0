@@ -859,7 +859,7 @@ async def get_stats(db: Session = Depends(get_db)):
 
 # Get the directory paths
 BACKEND_DIR = Path(__file__).parent
-FRONTEND_DIR = BACKEND_DIR.parent / "frontend"
+FRONTEND_DIR = BACKEND_DIR / "dist"
 
 # Serve index.html at root
 @app.get("/")
