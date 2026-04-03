@@ -861,6 +861,10 @@ async def get_stats(db: Session = Depends(get_db)):
 BACKEND_DIR = Path(__file__).parent
 FRONTEND_DIR = BACKEND_DIR / "dist"
 
+# Mount React static files
+if FRONTEND_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets", html=True), name="assets")
+
 # Serve index.html at root
 @app.get("/")
 async def serve_index():
@@ -877,43 +881,10 @@ async def serve_index():
         )
     return {"message": "L2B.click - Use /docs for API documentation"}
 
-# Serve static files (CSS, JS, images)
-@app.get("/styles.css")
-async def serve_css():
-    """Serve styles.css"""
-    css_path = FRONTEND_DIR / "styles.css"
-    if css_path.exists():
-        return FileResponse(
-            css_path,
-            media_type="text/css",
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0"
-            }
-        )
-
-@app.get("/script.js")
-async def serve_js():
-    """Serve script.js"""
-    js_path = FRONTEND_DIR / "script.js"
-    if js_path.exists():
-        return FileResponse(
-            js_path,
-            media_type="application/javascript",
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0"
-            }
-        )
-
-# Fallback - serve index.html for SPA routes (but NOT API)
+# Fallback - serve index.html for SPA routes
 @app.get("/{path:path}")
 async def serve_spa(path: str):
     """Serve index.html for frontend routes"""
-    # Let FastAPI handle API routes - they should already be handled
-    # This is the catch-all for frontend SPA
     index_path = FRONTEND_DIR / "index.html"
     if index_path.exists():
         return FileResponse(
