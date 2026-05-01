@@ -1,104 +1,131 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Header from './components/Header'
 import Hero from './components/Hero'
 import SearchForm from './components/SearchForm'
 import Results from './components/Results'
-import Features from './components/Features'
-import ContactModal from './components/ContactModal'
 import DetailsModal from './components/DetailsModal'
+import ImportModal from './components/ImportModal'
 import Footer from './components/Footer'
 
 function App() {
-  const [stats, setStats] = useState({ total_businesses: 0, total_industries: 0 })
+  const [activeTab, setActiveTab] = useState('buyers')
+  const [stats, setStats] = useState({ total_buyers: 0, total_suppliers: 0, total_countries: 0 })
+  const [filters, setFilters] = useState({ buyer_countries: [], supplier_countries: [], activities: [], activity_labels: {} })
   const [results, setResults] = useState([])
   const [pagination, setPagination] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [showResults, setShowResults] = useState(false)
-  const [selectedBusiness, setSelectedBusiness] = useState(null)
-  const [showContact, setShowContact] = useState(false)
+  const [hasSearched, setHasSearched] = useState(false)
+  const [selected, setSelected] = useState(null)
   const [showDetails, setShowDetails] = useState(false)
+  const [showImport, setShowImport] = useState(false)
+  const [lastSearch, setLastSearch] = useState({})
 
   useEffect(() => {
-    fetchStats()
+    fetch('/api/stats').then(r => r.ok ? r.json() : null).then(d => d && setStats(d)).catch(() => {})
+    fetch('/api/filters').then(r => r.ok ? r.json() : null).then(d => d && setFilters(d)).catch(() => {})
   }, [])
 
-  async function fetchStats() {
-    try {
-      const res = await fetch('/api/stats')
-      if (res.ok) {
-        const data = await res.json()
-        setStats(data)
-      }
-    } catch (err) {
-      console.error('Failed to fetch stats:', err)
-    }
-  }
-
-  async function handleSearch(params) {
+  const handleSearch = useCallback(async (params) => {
     setLoading(true)
-    setShowResults(true)
+    setHasSearched(true)
+    setLastSearch(params)
+    const endpoint = activeTab === 'buyers' ? '/api/buyers/search' : '/api/suppliers/search'
     try {
-      const query = new URLSearchParams(params).toString()
-      const res = await fetch(`/api/businesses/search?${query}`)
+      const qs = new URLSearchParams({ ...params, limit: 25 }).toString()
+      const res = await fetch(`${endpoint}?${qs}`)
       const data = await res.json()
       setResults(data.data || [])
       setPagination(data.pagination || null)
-    } catch (err) {
-      console.error('Search failed:', err)
+    } catch {
+      setResults([])
+      setPagination(null)
     } finally {
       setLoading(false)
     }
-  }
+  }, [activeTab])
 
-  function handleViewDetails(business) {
-    setSelectedBusiness(business)
+  const handlePageChange = useCallback((page) => {
+    handleSearch({ ...lastSearch, page })
+  }, [handleSearch, lastSearch])
+
+  const handleRowClick = (item) => {
+    setSelected(item)
     setShowDetails(true)
   }
 
-  function handleViewContact(business) {
-    setSelectedBusiness(business)
-    setShowContact(true)
+  const handleTabChange = (tab) => {
+    setActiveTab(tab)
+    setResults([])
+    setPagination(null)
+    setHasSearched(false)
+    setLastSearch({})
   }
 
-  function handlePageChange(page) {
-    const params = new URLSearchParams(window.location.search)
-    params.set('page', page)
-    handleSearch(Object.fromEntries(params))
+  const buildExportUrl = (format) => {
+    const endpoint = activeTab === 'buyers'
+      ? `/api/buyers/export/${format}`
+      : `/api/suppliers/export/${format}`
+    const qs = new URLSearchParams(lastSearch).toString()
+    return `${endpoint}?${qs}`
   }
 
   return (
     <div className="app">
-      <Header />
+      <Header onAdminClick={() => setShowImport(true)} />
       <Hero stats={stats} />
-      <SearchForm onSearch={handleSearch} loading={loading} />
-      
-      {showResults && (
-        <Results
-          results={results}
-          pagination={pagination}
-          loading={loading}
-          onViewDetails={handleViewDetails}
-          onViewContact={handleViewContact}
-          onPageChange={handlePageChange}
-        />
-      )}
-      
-      <Features />
+
+      <div className="tabs-bar">
+        <div className="tabs-inner">
+          <button
+            className={`tab-btn ${activeTab === 'buyers' ? 'active' : ''}`}
+            onClick={() => handleTabChange('buyers')}
+          >
+            Buyers
+            <span className="tab-count">{stats.total_buyers.toLocaleString()}</span>
+          </button>
+          <button
+            className={`tab-btn ${activeTab === 'suppliers' ? 'active' : ''}`}
+            onClick={() => handleTabChange('suppliers')}
+          >
+            Suppliers
+            <span className="tab-count">{stats.total_suppliers.toLocaleString()}</span>
+          </button>
+        </div>
+      </div>
+
+      <SearchForm
+        entity={activeTab}
+        filters={filters}
+        onSearch={handleSearch}
+        loading={loading}
+      />
+
+      <Results
+        entity={activeTab}
+        results={results}
+        pagination={pagination}
+        loading={loading}
+        hasSearched={hasSearched}
+        activityLabels={filters.activity_labels}
+        onRowClick={handleRowClick}
+        onPageChange={handlePageChange}
+        onExportCsv={() => window.open(buildExportUrl('csv'), '_blank')}
+        onExportPdf={() => window.open(buildExportUrl('pdf'), '_blank')}
+      />
+
       <Footer />
 
-      {showContact && (
-        <ContactModal
-          business={selectedBusiness}
-          onClose={() => setShowContact(false)}
+      {showDetails && selected && (
+        <DetailsModal
+          entity={activeTab}
+          item={selected}
+          activityLabels={filters.activity_labels}
+          onClose={() => setShowDetails(false)}
         />
       )}
 
-      {showDetails && (
-        <DetailsModal
-          business={selectedBusiness}
-          onClose={() => setShowDetails(false)}
-          onViewContact={handleViewContact}
-        />
+      {showImport && (
+        <ImportModal onClose={() => setShowImport(false)} />
       )}
     </div>
   )
