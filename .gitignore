@@ -26,8 +26,12 @@ Thumbs.db
 # Railway
 .railway/
 
-# Python
+# Python package outputs (not backend/dist which is the pre-built frontend)
 *.egg-info/
-dist/
 build/
 *.egg
+/dist/
+
+# Keep pre-built React frontend in git
+!backend/dist/
+!backend/dist/**
