@@ -216,14 +216,35 @@ def require_admin(x_admin_password: str = Header(None)):
 
 @app.get("/health")
 async def health_check():
+    if not SessionLocal:
+        return {"status": "unhealthy", "error": "No DATABASE_URL configured"}
+    db = SessionLocal()
     try:
-        db = SessionLocal()
-        buyers = db.execute(text("SELECT COUNT(*) FROM buyers")).scalar()
-        suppliers = db.execute(text("SELECT COUNT(*) FROM suppliers")).scalar()
-        db.close()
-        return {"status": "healthy", "buyers": buyers, "suppliers": suppliers}
+        # List all tables in the public schema
+        tables = db.execute(
+            text("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename")
+        ).fetchall()
+        table_names = [r[0] for r in tables]
+
+        # Try counting from our expected table names
+        counts = {}
+        for tbl in table_names:
+            try:
+                n = db.execute(text(f"SELECT COUNT(*) FROM {tbl}")).scalar()
+                counts[tbl] = n
+            except Exception:
+                counts[tbl] = "error"
+
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "tables": table_names,
+            "row_counts": counts,
+        }
     except Exception as e:
         return {"status": "unhealthy", "error": str(e)}
+    finally:
+        db.close()
 
 
 @app.get("/api/stats")
