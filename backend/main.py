@@ -56,6 +56,10 @@ def get_database_url():
 DATABASE_URL = get_database_url()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "l2b-admin-2025")
 
+# SQLAlchemy 2.x requires postgresql:// not postgres://
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 if DATABASE_URL:
     engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=300)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -275,8 +279,9 @@ async def search_buyers(
     page: int = Query(1, ge=1),
     limit: int = Query(25, ge=1, le=100),
 ):
-    db_gen = get_db()
-    db: Session = next(db_gen)
+    if not SessionLocal:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    db = SessionLocal()
     try:
         where, params = build_buyers_where(q, country, activity)
         col = BUYER_SORT_COLS.get(sort_by, "total_budget_spent_eur")
@@ -317,6 +322,9 @@ async def search_buyers(
                 "total_pages": max(1, (total + limit - 1) // limit),
             },
         }
+    except Exception as e:
+        print(f"ERROR /api/buyers/search: {e}")
+        raise HTTPException(status_code=503, detail=f"Database error: {str(e)}")
     finally:
         db.close()
 
@@ -332,8 +340,9 @@ async def search_suppliers(
     page: int = Query(1, ge=1),
     limit: int = Query(25, ge=1, le=100),
 ):
-    db_gen = get_db()
-    db: Session = next(db_gen)
+    if not SessionLocal:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    db = SessionLocal()
     try:
         where, params = build_suppliers_where(q, country)
         col = SUPPLIER_SORT_COLS.get(sort_by, "lifetime_revenue_eur")
@@ -371,6 +380,9 @@ async def search_suppliers(
                 "total_pages": max(1, (total + limit - 1) // limit),
             },
         }
+    except Exception as e:
+        print(f"ERROR /api/suppliers/search: {e}")
+        raise HTTPException(status_code=503, detail=f"Database error: {str(e)}")
     finally:
         db.close()
 
