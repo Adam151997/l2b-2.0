@@ -4,7 +4,7 @@ function Header({ onAdminClick, onAddCompany }) {
       <div className="header-inner">
         <div className="logo" onClick={() => window.location.reload()}>
           <div className="logo-icon">L</div>
-          <span className="logo-text">L2B<span>.click</span></span>
+          <span className="logo-text">L2B</span>
         </div>
         <nav className="header-nav">
           <a className="nav-btn" href="/docs" target="_blank" rel="noreferrer">

@@ -1058,7 +1058,8 @@ async def search_companies(
         order = "ASC" if sort_order.lower() != "desc" else "DESC"
         offset = (page - 1) * limit
 
-        # UNION ALL: master table + user-added companies
+        # Fetch one extra row to detect whether more pages exist — avoids COUNT(*) scan
+        fetch_limit = limit + 1
         union_query = f"""
             SELECT {_COMPANY_COLS} FROM {COMPANY_TABLE} {where}
             UNION ALL
@@ -1066,25 +1067,33 @@ async def search_companies(
             ORDER BY {col} {order} NULLS LAST
             LIMIT :limit OFFSET :offset
         """
-        rows = db.execute(text(union_query), {**params, "limit": limit, "offset": offset}).fetchall()
+        rows = db.execute(text(union_query), {**params, "limit": fetch_limit, "offset": offset}).fetchall()
+        has_more = len(rows) == fetch_limit
+        rows = rows[:limit]
 
         has_filters = bool(where)
-        if has_filters:
-            count_q = f"""
-                SELECT COUNT(*) FROM (
-                    SELECT company_id FROM {COMPANY_TABLE} {where}
-                    UNION ALL
-                    SELECT company_id FROM {USER_COMPANIES_TABLE} {where}
-                ) _t
-            """
-            total = db.execute(text(count_q), params).scalar() or 0
-        else:
+        if not has_filters:
             master_total = db.execute(
                 text("SELECT reltuples::bigint FROM pg_class WHERE relname = :tbl"),
                 {"tbl": COMPANY_TABLE}
             ).scalar() or 0
             user_total = db.execute(text(f"SELECT COUNT(*) FROM {USER_COMPANIES_TABLE}")).scalar() or 0
             total = int(master_total) + int(user_total)
+            is_estimate = True
+        else:
+            # Derive total from what we fetched — no second COUNT(*) scan
+            if not has_more:
+                total = offset + len(rows)
+                is_estimate = False
+            else:
+                # Still pages left: show a floor estimate, update on last page
+                total = offset + limit + 1
+                is_estimate = True
+
+        total_pages = max(1, (total + limit - 1) // limit)
+        # If we know there are more pages but estimate undershoots, ensure next page is reachable
+        if has_more and total_pages <= page:
+            total_pages = page + 1
 
         return {
             "data": [row_to_company_dict(r) for r in rows],
@@ -1092,8 +1101,8 @@ async def search_companies(
                 "page": page,
                 "limit": limit,
                 "total": int(total),
-                "total_pages": max(1, (int(total) + limit - 1) // limit),
-                "is_estimate": not has_filters,
+                "total_pages": total_pages,
+                "is_estimate": is_estimate,
             },
         }
     except Exception as e:
@@ -1101,6 +1110,44 @@ async def search_companies(
         raise HTTPException(status_code=503, detail=f"{type(e).__name__}: {str(e)}")
     finally:
         db.close()
+
+
+@app.post("/api/admin/create-indexes")
+async def create_search_indexes(background_tasks: BackgroundTasks):
+    """One-time endpoint: creates pg_trgm indexes on master_companies for fast ILIKE search.
+    Runs CONCURRENTLY so the table stays readable. Takes ~5-15 min on 7M rows."""
+    if not engine:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    def _build():
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+                conn.commit()
+            with engine.connect() as conn:
+                conn.execute(text(f"""
+                    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_mc_legal_name_trgm
+                    ON {COMPANY_TABLE} USING gin(legal_name gin_trgm_ops)
+                """))
+                conn.commit()
+            with engine.connect() as conn:
+                conn.execute(text(f"""
+                    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_mc_country
+                    ON {COMPANY_TABLE}(country)
+                """))
+                conn.commit()
+            with engine.connect() as conn:
+                conn.execute(text(f"""
+                    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_mc_is_active
+                    ON {COMPANY_TABLE}(is_active)
+                """))
+                conn.commit()
+            print("INDEX CREATION COMPLETE")
+        except Exception as e:
+            print(f"INDEX CREATION ERROR: {e}")
+
+    background_tasks.add_task(_build)
+    return {"status": "started", "message": "Index creation running in background. Check server logs for completion (~5-15 min)."}
 
 
 @app.get("/api/companies/export/csv")
