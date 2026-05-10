@@ -144,7 +144,7 @@ SUPPLIER_SORT_COLS = {
     "bidder_name": "bidder_name",
 }
 
-COMPANY_TABLE = "master_companies_unified_final"
+COMPANY_TABLE = "master_companies"
 
 COMPANY_SORT_COLS = {
     "legal_name": "legal_name",
