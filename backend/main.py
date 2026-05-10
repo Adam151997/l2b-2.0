@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query, Request, UploadFile, File, Header, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Query, Request, UploadFile, File, Header, BackgroundTasks, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -144,8 +144,59 @@ SUPPLIER_SORT_COLS = {
     "bidder_name": "bidder_name",
 }
 
+COMPANY_TABLE = "master_companies_unified_final"
+
+COMPANY_SORT_COLS = {
+    "legal_name": "legal_name",
+    "country": "country",
+    "registration_date": "registration_date",
+    "employees_max": "COALESCE(employees_max, 0)",
+}
+
+EDITABLE_COMPANY_FIELDS = {
+    "legal_name", "dba_name", "country", "industry_code", "industry_description",
+    "status", "is_active", "registration_date", "dissolution_date",
+    "address_line1", "address_line2", "address_city", "address_state",
+    "address_postal_code", "address_country", "business_number",
+    "employees_min", "employees_max", "entity_structure", "business_type",
+    "company_url", "industry_system",
+}
+
 # In-memory import job tracker
 import_jobs: dict = {}
+
+
+@app.on_event("startup")
+async def setup_db():
+    if not engine:
+        return
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS company_edits (
+                    id SERIAL PRIMARY KEY,
+                    company_id VARCHAR NOT NULL,
+                    field_name VARCHAR NOT NULL,
+                    old_value TEXT,
+                    new_value TEXT,
+                    edited_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            conn.commit()
+            for sql in [
+                f"CREATE INDEX IF NOT EXISTS idx_co_country ON {COMPANY_TABLE} (country)",
+                f"CREATE INDEX IF NOT EXISTS idx_co_active ON {COMPANY_TABLE} (is_active)",
+                f"CREATE INDEX IF NOT EXISTS idx_co_cid ON {COMPANY_TABLE} (company_id)",
+                f"CREATE INDEX IF NOT EXISTS idx_co_src ON {COMPANY_TABLE} (source_dataset)",
+                "CREATE INDEX IF NOT EXISTS idx_co_edits_cid ON company_edits (company_id)",
+            ]:
+                try:
+                    conn.execute(text(sql))
+                    conn.commit()
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"DB setup error: {e}")
 
 # =============================================================================
 # HELPERS
@@ -209,6 +260,57 @@ def format_eur(value) -> str:
 def require_admin(x_admin_password: str = Header(None)):
     if x_admin_password != ADMIN_PASSWORD:
         raise HTTPException(status_code=403, detail="Invalid admin password")
+
+
+COMPANY_SELECT = f"""
+    SELECT company_id, legal_name, dba_name, country, industry_code,
+           industry_description, status, is_active, registration_date,
+           dissolution_date, address_city, address_state, address_country,
+           employees_min, employees_max, entity_structure, business_type,
+           company_url, source_dataset, address_line1, address_postal_code,
+           business_number, original_language, address_line2, industry_system
+    FROM {COMPANY_TABLE}
+"""
+
+
+def row_to_company_dict(r):
+    if not r:
+        return None
+    return {
+        "company_id": r[0], "legal_name": r[1], "dba_name": r[2],
+        "country": r[3], "industry_code": r[4], "industry_description": r[5],
+        "status": r[6], "is_active": r[7],
+        "registration_date": str(r[8]) if r[8] else None,
+        "dissolution_date": str(r[9]) if r[9] else None,
+        "address_city": r[10], "address_state": r[11], "address_country": r[12],
+        "employees_min": r[13], "employees_max": r[14],
+        "entity_structure": r[15], "business_type": r[16],
+        "company_url": r[17], "source_dataset": r[18],
+        "address_line1": r[19], "address_postal_code": r[20],
+        "business_number": r[21], "original_language": r[22],
+        "address_line2": r[23], "industry_system": r[24],
+    }
+
+
+def build_companies_where(q=None, country=None, industry=None, is_active=None, source_dataset=None):
+    conditions, params = [], {}
+    if q:
+        conditions.append("(legal_name ILIKE :q OR dba_name ILIKE :q OR address_city ILIKE :q)")
+        params["q"] = f"%{q}%"
+    if country:
+        conditions.append("country = :country")
+        params["country"] = country
+    if industry:
+        conditions.append("industry_description ILIKE :industry")
+        params["industry"] = f"%{industry}%"
+    if is_active is not None:
+        conditions.append("is_active = :is_active")
+        params["is_active"] = is_active
+    if source_dataset:
+        conditions.append("source_dataset = :source_dataset")
+        params["source_dataset"] = source_dataset
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    return where, params
 
 # =============================================================================
 # ENDPOINTS
@@ -859,6 +961,292 @@ async def import_template(entity: str):
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=l2b_{entity}_template.csv"},
     )
+
+
+# =============================================================================
+# COMPANY ENDPOINTS
+# =============================================================================
+
+@app.get("/api/companies/stats")
+async def get_company_stats():
+    try:
+        db = SessionLocal()
+        total = db.execute(
+            text("SELECT reltuples::bigint FROM pg_class WHERE relname = :tbl"),
+            {"tbl": COMPANY_TABLE}
+        ).scalar() or 0
+        active = db.execute(
+            text(f"SELECT COUNT(*) FROM {COMPANY_TABLE} WHERE is_active = true")
+        ).scalar()
+        countries = db.execute(
+            text(f"SELECT country, COUNT(*) FROM {COMPANY_TABLE} GROUP BY country ORDER BY 2 DESC")
+        ).fetchall()
+        db.close()
+        return {
+            "total_companies": int(total),
+            "active_companies": int(active),
+            "by_country": {r[0]: int(r[1]) for r in countries if r[0]},
+        }
+    except Exception as e:
+        return {"total_companies": 0, "active_companies": 0, "by_country": {}, "error": str(e)}
+
+
+@app.get("/api/companies/filters")
+async def get_company_filters():
+    try:
+        db = SessionLocal()
+        countries = db.execute(
+            text(f"SELECT DISTINCT country FROM {COMPANY_TABLE} WHERE country IS NOT NULL ORDER BY country")
+        ).fetchall()
+        source_datasets = db.execute(
+            text(f"SELECT DISTINCT source_dataset FROM {COMPANY_TABLE} WHERE source_dataset IS NOT NULL ORDER BY source_dataset")
+        ).fetchall()
+        db.close()
+        return {
+            "countries": [r[0] for r in countries],
+            "source_datasets": [r[0] for r in source_datasets],
+        }
+    except Exception as e:
+        return {"countries": [], "source_datasets": [], "error": str(e)}
+
+
+@app.get("/api/companies/search")
+async def search_companies(
+    q: Optional[str] = Query(None),
+    country: Optional[str] = Query(None),
+    industry: Optional[str] = Query(None),
+    is_active: Optional[bool] = Query(None),
+    source_dataset: Optional[str] = Query(None),
+    sort_by: str = Query("legal_name"),
+    sort_order: str = Query("asc"),
+    page: int = Query(1, ge=1, le=500),
+    limit: int = Query(25, ge=1, le=100),
+):
+    if not SessionLocal:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    db = SessionLocal()
+    try:
+        where, params = build_companies_where(q, country, industry, is_active, source_dataset)
+        col = COMPANY_SORT_COLS.get(sort_by, "legal_name")
+        order = "ASC" if sort_order.lower() != "desc" else "DESC"
+        offset = (page - 1) * limit
+
+        rows = db.execute(
+            text(f"{COMPANY_SELECT} {where} ORDER BY {col} {order} NULLS LAST LIMIT :limit OFFSET :offset"),
+            {**params, "limit": limit, "offset": offset},
+        ).fetchall()
+
+        has_filters = bool(where)
+        if has_filters:
+            total = db.execute(text(f"SELECT COUNT(*) FROM {COMPANY_TABLE} {where}"), params).scalar()
+        else:
+            total = db.execute(
+                text("SELECT reltuples::bigint FROM pg_class WHERE relname = :tbl"),
+                {"tbl": COMPANY_TABLE}
+            ).scalar() or 0
+
+        return {
+            "data": [row_to_company_dict(r) for r in rows],
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": int(total),
+                "total_pages": max(1, (int(total) + limit - 1) // limit),
+                "is_estimate": not has_filters,
+            },
+        }
+    except Exception as e:
+        print(f"ERROR /api/companies/search: {e}")
+        raise HTTPException(status_code=503, detail=f"Database error: {str(e)}")
+    finally:
+        db.close()
+
+
+@app.get("/api/companies/export/csv")
+async def export_companies_csv(
+    q: Optional[str] = Query(None),
+    country: Optional[str] = Query(None),
+    industry: Optional[str] = Query(None),
+    is_active: Optional[bool] = Query(None),
+    source_dataset: Optional[str] = Query(None),
+    sort_by: str = Query("legal_name"),
+    sort_order: str = Query("asc"),
+):
+    db_gen = get_db()
+    db: Session = next(db_gen)
+    try:
+        where, params = build_companies_where(q, country, industry, is_active, source_dataset)
+        col = COMPANY_SORT_COLS.get(sort_by, "legal_name")
+        order = "ASC" if sort_order.lower() != "desc" else "DESC"
+
+        rows = db.execute(
+            text(f"{COMPANY_SELECT} {where} ORDER BY {col} {order} NULLS LAST LIMIT 10000"),
+            params,
+        ).fetchall()
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            "Company ID", "Legal Name", "DBA Name", "Country", "Industry Code",
+            "Industry Description", "Status", "Is Active", "Registration Date",
+            "Dissolution Date", "City", "State/Province", "Address Country",
+            "Employees Min", "Employees Max", "Entity Structure", "Business Type",
+            "Website", "Source Dataset", "Address Line 1", "Postal Code",
+            "Business Number", "Language", "Address Line 2", "Industry System",
+        ])
+        for r in rows:
+            writer.writerow([
+                r[0] or "", r[1] or "", r[2] or "", r[3] or "", r[4] or "",
+                r[5] or "", r[6] or "", r[7], str(r[8]) if r[8] else "",
+                str(r[9]) if r[9] else "", r[10] or "", r[11] or "", r[12] or "",
+                r[13] if r[13] is not None else "", r[14] if r[14] is not None else "",
+                r[15] or "", r[16] or "", r[17] or "", r[18] or "",
+                r[19] or "", r[20] or "", r[21] or "", r[22] or "",
+                r[23] or "", r[24] or "",
+            ])
+
+        filename = f"l2b_companies_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.csv"
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    finally:
+        db.close()
+
+
+@app.get("/api/companies/{company_id}/history")
+async def get_company_history(company_id: str):
+    if not SessionLocal:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    db = SessionLocal()
+    try:
+        rows = db.execute(
+            text("""
+                SELECT id, field_name, old_value, new_value, edited_at
+                FROM company_edits WHERE company_id = :cid
+                ORDER BY edited_at DESC LIMIT 100
+            """),
+            {"cid": company_id}
+        ).fetchall()
+        return {
+            "company_id": company_id,
+            "edits": [
+                {"id": r[0], "field": r[1], "old_value": r[2], "new_value": r[3], "edited_at": str(r[4])}
+                for r in rows
+            ],
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/companies/{company_id}")
+async def get_company(company_id: str):
+    if not SessionLocal:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    db = SessionLocal()
+    try:
+        row = db.execute(
+            text(f"{COMPANY_SELECT} WHERE company_id = :cid"),
+            {"cid": company_id}
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Company not found")
+        return row_to_company_dict(row)
+    finally:
+        db.close()
+
+
+@app.put("/api/companies/{company_id}")
+async def update_company(
+    company_id: str,
+    updates: dict = Body(...),
+    x_admin_password: str = Header(None),
+):
+    if x_admin_password != ADMIN_PASSWORD:
+        raise HTTPException(status_code=403, detail="Invalid admin password")
+    if not SessionLocal:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    invalid = set(updates.keys()) - EDITABLE_COMPANY_FIELDS
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"Non-editable fields: {', '.join(invalid)}")
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    db = SessionLocal()
+    try:
+        cols = ", ".join(updates.keys())
+        current = db.execute(
+            text(f"SELECT {cols} FROM {COMPANY_TABLE} WHERE company_id = :cid"),
+            {"cid": company_id}
+        ).fetchone()
+        if not current:
+            raise HTTPException(status_code=404, detail="Company not found")
+
+        set_clause = ", ".join(f"{f} = :{f}" for f in updates.keys())
+        db.execute(
+            text(f"UPDATE {COMPANY_TABLE} SET {set_clause} WHERE company_id = :cid"),
+            {**updates, "cid": company_id}
+        )
+
+        current_dict = dict(zip(updates.keys(), current))
+        for field, new_val in updates.items():
+            old_val = current_dict.get(field)
+            if str(old_val or "") != str(new_val or ""):
+                db.execute(
+                    text("INSERT INTO company_edits (company_id, field_name, old_value, new_value) VALUES (:cid, :f, :o, :n)"),
+                    {"cid": company_id, "f": field,
+                     "o": str(old_val) if old_val is not None else None,
+                     "n": str(new_val) if new_val is not None else None}
+                )
+        db.commit()
+
+        row = db.execute(text(f"{COMPANY_SELECT} WHERE company_id = :cid"), {"cid": company_id}).fetchone()
+        return row_to_company_dict(row)
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.post("/api/companies")
+async def create_company(
+    data: dict = Body(...),
+    x_admin_password: str = Header(None),
+):
+    if x_admin_password != ADMIN_PASSWORD:
+        raise HTTPException(status_code=403, detail="Invalid admin password")
+    if not data.get("legal_name") or not data.get("country"):
+        raise HTTPException(status_code=400, detail="legal_name and country are required")
+    if not SessionLocal:
+        raise HTTPException(status_code=503, detail="Database not configured")
+
+    company_id = data.get("company_id") or (str(uuid.uuid4()).replace("-", "")[:12].upper())
+    allowed = EDITABLE_COMPANY_FIELDS | {"company_id"}
+    clean = {k: v for k, v in data.items() if k in allowed and v not in (None, "")}
+    clean["company_id"] = company_id
+    clean.setdefault("is_active", True)
+    clean.setdefault("source_dataset", "USER_ADDED")
+    clean.setdefault("original_language", "en")
+    clean.setdefault("industry_system", "OTHER")
+
+    db = SessionLocal()
+    try:
+        cols = ", ".join(clean.keys())
+        vals = ", ".join(f":{k}" for k in clean.keys())
+        db.execute(text(f"INSERT INTO {COMPANY_TABLE} ({cols}) VALUES ({vals})"), clean)
+        db.commit()
+        row = db.execute(text(f"{COMPANY_SELECT} WHERE company_id = :cid"), {"cid": company_id}).fetchone()
+        return row_to_company_dict(row)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
 
 
 # =============================================================================

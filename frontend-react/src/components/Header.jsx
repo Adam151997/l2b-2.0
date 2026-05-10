@@ -1,4 +1,4 @@
-function Header({ onAdminClick }) {
+function Header({ onAdminClick, onAddCompany, activeTab, isAdmin }) {
   return (
     <header className="header">
       <div className="header-inner">
@@ -8,10 +8,15 @@ function Header({ onAdminClick }) {
         </div>
         <nav className="header-nav">
           <a className="nav-btn" href="/docs" target="_blank" rel="noreferrer">
-            API Docs
+            API
           </a>
+          {activeTab === 'companies' && (
+            <button className="nav-btn add-btn" onClick={onAddCompany}>
+              + Add Company
+            </button>
+          )}
           <button className="nav-btn admin-btn" onClick={onAdminClick}>
-            ⚙ Import Data
+            {isAdmin ? '✓ Admin' : '⚙ Import'}
           </button>
         </nav>
       </div>
