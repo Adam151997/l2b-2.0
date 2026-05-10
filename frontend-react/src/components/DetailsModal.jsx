@@ -1,13 +1,5 @@
 import { useState, useEffect } from 'react'
 
-function formatEur(val) {
-  const v = parseFloat(val || 0)
-  if (v >= 1e9) return `€${(v / 1e9).toFixed(2)}B`
-  if (v >= 1e6) return `€${(v / 1e6).toFixed(2)}M`
-  if (v >= 1e3) return `€${(v / 1e3).toFixed(0)}K`
-  return `€${v.toFixed(0)}`
-}
-
 function Field({ label, value, mono }) {
   return (
     <div className="detail-item">
@@ -48,16 +40,12 @@ function EditField({ label, name, value, onChange, type = 'text', options }) {
   )
 }
 
-// ─── Company Detail View ───────────────────────────────────────────────────────
-
-function CompanyDetail({ item, adminPassword, onUpdate, onClose }) {
+function CompanyDetail({ item, onUpdate, onClose }) {
   const [tab, setTab] = useState('details')
   const [editMode, setEditMode] = useState(false)
   const [form, setForm] = useState({})
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
-  const [authPw, setAuthPw] = useState('')
-  const [authError, setAuthError] = useState(null)
   const [history, setHistory] = useState(null)
   const [historyLoading, setHistoryLoading] = useState(false)
 
@@ -105,40 +93,13 @@ function CompanyDetail({ item, adminPassword, onUpdate, onClose }) {
       setSaving(false)
       return
     }
-    const result = await onUpdate(item.company_id, changed, adminPassword || authPw || undefined)
+    const result = await onUpdate(item.company_id, changed)
     setSaving(false)
     if (result.error) {
-      if (result.error.includes('admin') || result.error.includes('password') || result.error.includes('403')) {
-        setSaveError('Invalid admin password. Please check your credentials.')
-      } else {
-        setSaveError(result.error)
-      }
+      setSaveError(result.error)
     } else {
       setEditMode(false)
       setHistory(null)
-    }
-  }
-
-  function handleEditClick() {
-    if (adminPassword) {
-      setEditMode(true)
-      setSaveError(null)
-    } else {
-      setTab('auth')
-    }
-  }
-
-  async function handleAuthSubmit(e) {
-    e.preventDefault()
-    setAuthError(null)
-    const res = await fetch('/api/import/history', {
-      headers: { 'X-Admin-Password': authPw },
-    })
-    if (res.ok) {
-      setTab('details')
-      setEditMode(true)
-    } else {
-      setAuthError('Incorrect password')
     }
   }
 
@@ -174,7 +135,7 @@ function CompanyDetail({ item, adminPassword, onUpdate, onClose }) {
           </button>
         ))}
         {tab === 'details' && !editMode && (
-          <button className="modal-tab-action" onClick={handleEditClick}>✎ Edit</button>
+          <button className="modal-tab-action" onClick={() => { setEditMode(true); setSaveError(null) }}>✎ Edit</button>
         )}
         {tab === 'details' && editMode && (
           <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
@@ -187,33 +148,6 @@ function CompanyDetail({ item, adminPassword, onUpdate, onClose }) {
           </div>
         )}
       </div>
-
-      {tab === 'auth' && (
-        <div className="modal-body">
-          <form className="auth-form" onSubmit={handleAuthSubmit}>
-            <div className="auth-icon">🔐</div>
-            <p className="auth-msg">Enter admin password to edit this record</p>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                className="field-input"
-                type="password"
-                placeholder="Admin password"
-                value={authPw}
-                onChange={e => setAuthPw(e.target.value)}
-                autoFocus
-              />
-              <button className="btn btn-primary" type="submit">Unlock</button>
-            </div>
-            {authError && <div className="save-error">{authError}</div>}
-            <button
-              type="button"
-              className="btn btn-secondary"
-              style={{ marginTop: 8 }}
-              onClick={() => setTab('details')}
-            >Back</button>
-          </form>
-        </div>
-      )}
 
       {tab === 'details' && (
         <div className="modal-body">
@@ -372,125 +306,11 @@ function CompanyDetail({ item, adminPassword, onUpdate, onClose }) {
   )
 }
 
-// ─── Buyer Detail (unchanged) ─────────────────────────────────────────────────
-
-function BuyerDetail({ item, activityLabels }) {
-  const activities = item.buyer_mainActivities
-    ? item.buyer_mainActivities.split(',').map(s => s.trim()).filter(Boolean)
-    : []
-  return (
-    <>
-      <div className="modal-header">
-        <div>
-          <div className="modal-title">{item.buyer_name}</div>
-          <div className="modal-sub">
-            {[item.buyer_city, item.buyer_country].filter(Boolean).join(', ')} · Contracting Authority
-          </div>
-        </div>
-      </div>
-      <div className="modal-body">
-        <div className="detail-grid">
-          <div className="detail-item">
-            <div className="detail-key">Total Budget Spent</div>
-            <div className="detail-val big">{formatEur(item.total_budget_spent_eur)}</div>
-          </div>
-          <div className="detail-item">
-            <div className="detail-key">Tenders Issued</div>
-            <div className="detail-val big">{(item.total_tenders_issued || 0).toLocaleString()}</div>
-          </div>
-          <div className="detail-item">
-            <div className="detail-key">Country</div>
-            <div className="detail-val">{item.buyer_country || '—'}</div>
-          </div>
-          <div className="detail-item">
-            <div className="detail-key">City</div>
-            <div className="detail-val">{item.buyer_city || '—'}</div>
-          </div>
-          {activities.length > 0 && (
-            <div className="detail-item" style={{ gridColumn: '1 / -1' }}>
-              <div className="detail-key">Sectors</div>
-              <div className="badge-list" style={{ marginTop: 6 }}>
-                {activities.map(a => (
-                  <span key={a} className="badge">{activityLabels[a] || a}</span>
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="detail-item">
-            <div className="detail-key">Avg. Budget per Tender</div>
-            <div className="detail-val">
-              {item.total_tenders_issued ? formatEur(item.total_budget_spent_eur / item.total_tenders_issued) : '—'}
-            </div>
-          </div>
-        </div>
-      </div>
-    </>
-  )
-}
-
-function SupplierDetail({ item }) {
-  return (
-    <>
-      <div className="modal-header">
-        <div>
-          <div className="modal-title">{item.bidder_name}</div>
-          <div className="modal-sub">{item.bidder_country || '—'} · Supplier</div>
-        </div>
-      </div>
-      <div className="modal-body">
-        <div className="detail-grid">
-          <div className="detail-item">
-            <div className="detail-key">Lifetime Revenue</div>
-            <div className="detail-val green">{formatEur(item.lifetime_revenue_eur)}</div>
-          </div>
-          <div className="detail-item">
-            <div className="detail-key">Contracts Won</div>
-            <div className="detail-val big">{(item.total_contracts_won || 0).toLocaleString()}</div>
-          </div>
-          <div className="detail-item">
-            <div className="detail-key">Country</div>
-            <div className="detail-val">{item.bidder_country || '—'}</div>
-          </div>
-          <div className="detail-item">
-            <div className="detail-key">Avg. Contract Value</div>
-            <div className="detail-val">
-              {item.total_contracts_won ? formatEur(item.lifetime_revenue_eur / item.total_contracts_won) : '—'}
-            </div>
-          </div>
-        </div>
-      </div>
-    </>
-  )
-}
-
-// ─── Main modal wrapper ────────────────────────────────────────────────────────
-
-function DetailsModal({ entity, item, activityLabels, onClose, adminPassword, onUpdate }) {
+function DetailsModal({ item, onClose, onUpdate }) {
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={`modal ${entity === 'companies' ? 'modal-lg' : ''}`}>
-        {entity === 'companies' ? (
-          <CompanyDetail
-            item={item}
-            adminPassword={adminPassword}
-            onUpdate={onUpdate}
-            onClose={onClose}
-          />
-        ) : entity === 'buyers' ? (
-          <>
-            <BuyerDetail item={item} activityLabels={activityLabels} />
-            <div style={{ padding: '0 24px 24px' }}>
-              <button className="btn btn-secondary" style={{ width: '100%' }} onClick={onClose}>Close</button>
-            </div>
-          </>
-        ) : (
-          <>
-            <SupplierDetail item={item} />
-            <div style={{ padding: '0 24px 24px' }}>
-              <button className="btn btn-secondary" style={{ width: '100%' }} onClick={onClose}>Close</button>
-            </div>
-          </>
-        )}
+      <div className="modal modal-lg">
+        <CompanyDetail item={item} onUpdate={onUpdate} onClose={onClose} />
       </div>
     </div>
   )

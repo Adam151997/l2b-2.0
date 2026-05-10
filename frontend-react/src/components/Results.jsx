@@ -1,11 +1,3 @@
-function formatEur(val) {
-  const v = parseFloat(val || 0)
-  if (v >= 1e9) return `€${(v / 1e9).toFixed(1)}B`
-  if (v >= 1e6) return `€${(v / 1e6).toFixed(1)}M`
-  if (v >= 1e3) return `€${(v / 1e3).toFixed(0)}K`
-  return `€${v.toFixed(0)}`
-}
-
 function StatusBadge({ active }) {
   return (
     <span className={`status-badge ${active ? 'active' : 'inactive'}`}>
@@ -87,80 +79,6 @@ function CompaniesTable({ results, onRowClick }) {
   )
 }
 
-function ActivityCell({ raw, labels }) {
-  if (!raw) return <span className="text-muted">—</span>
-  const parts = raw.split(',').map(s => s.trim()).filter(Boolean)
-  const first = labels[parts[0]] || parts[0]
-  return (
-    <>
-      <span className="activity-tag" title={first}>{first}</span>
-      {parts.length > 1 && <span className="activity-more">+{parts.length - 1}</span>}
-    </>
-  )
-}
-
-function BuyersTable({ results, activityLabels, onRowClick }) {
-  return (
-    <table className="data-table">
-      <thead>
-        <tr>
-          <th style={{ width: '35%' }}>Organization</th>
-          <th style={{ width: '8%' }}>Country</th>
-          <th style={{ width: '12%' }}>City</th>
-          <th style={{ width: '18%' }}>Sector</th>
-          <th style={{ width: '10%', textAlign: 'right' }}>Tenders</th>
-          <th style={{ width: '17%', textAlign: 'right' }}>Total Budget</th>
-        </tr>
-      </thead>
-      <tbody>
-        {results.map((item, i) => (
-          <tr key={i} onClick={() => onRowClick(item)}>
-            <td><div className="name-cell" title={item.buyer_name}>{item.buyer_name}</div></td>
-            <td><span className="country-badge">{item.buyer_country || '—'}</span></td>
-            <td className="text-muted">{item.buyer_city || '—'}</td>
-            <td><ActivityCell raw={item.buyer_mainActivities} labels={activityLabels} /></td>
-            <td className="num-cell" style={{ textAlign: 'right' }}>
-              {(item.total_tenders_issued || 0).toLocaleString()}
-            </td>
-            <td className="budget-cell" style={{ textAlign: 'right' }}>
-              {formatEur(item.total_budget_spent_eur)}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
-}
-
-function SuppliersTable({ results, onRowClick }) {
-  return (
-    <table className="data-table">
-      <thead>
-        <tr>
-          <th style={{ width: '55%' }}>Company</th>
-          <th style={{ width: '10%' }}>Country</th>
-          <th style={{ width: '15%', textAlign: 'right' }}>Contracts Won</th>
-          <th style={{ width: '20%', textAlign: 'right' }}>Lifetime Revenue</th>
-        </tr>
-      </thead>
-      <tbody>
-        {results.map((item, i) => (
-          <tr key={i} onClick={() => onRowClick(item)}>
-            <td><div className="name-cell" title={item.bidder_name}>{item.bidder_name}</div></td>
-            <td><span className="country-badge">{item.bidder_country || '—'}</span></td>
-            <td className="num-cell" style={{ textAlign: 'right' }}>
-              {(item.total_contracts_won || 0).toLocaleString()}
-            </td>
-            <td className="revenue-cell" style={{ textAlign: 'right' }}>
-              {formatEur(item.lifetime_revenue_eur)}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
-}
-
 function Pagination({ pagination, onPageChange }) {
   if (!pagination || pagination.total_pages <= 1) return null
   const { page, total_pages, total, limit, is_estimate } = pagination
@@ -195,12 +113,10 @@ function Pagination({ pagination, onPageChange }) {
 }
 
 function Results({
-  entity, results, pagination, loading, hasSearched,
-  activityLabels, onRowClick, onPageChange,
-  onExportCsv, onExportPdf, onAddCompany,
+  results, pagination, loading, hasSearched,
+  onRowClick, onPageChange,
+  onExportCsv, onAddCompany,
 }) {
-  const entityLabel = entity === 'companies' ? 'companies' : entity
-
   if (!hasSearched && !loading) {
     return (
       <section className="results-section">
@@ -210,9 +126,7 @@ function Results({
               <div className="table-empty-icon">🔍</div>
               <div className="table-empty-title">Start your search</div>
               <div className="table-empty-sub">
-                {entity === 'companies'
-                  ? 'Search 7M+ companies by name, industry, country, or city'
-                  : `Use the filters above to search EU ${entityLabel}`}
+                Search 7M+ companies by name, industry, country, or city
               </div>
               {onAddCompany && (
                 <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={onAddCompany}>
@@ -234,7 +148,7 @@ function Results({
             {loading ? 'Searching…' : pagination
               ? <>
                   <strong>{pagination.total.toLocaleString()}</strong>
-                  {pagination.is_estimate ? '+ (estimated)' : ''} {entityLabel} found
+                  {pagination.is_estimate ? '+ (estimated)' : ''} companies found
                 </>
               : 'No results'
             }
@@ -248,13 +162,8 @@ function Results({
             {!loading && results.length > 0 && (
               <div className="export-group">
                 <button className="btn btn-csv btn-sm" onClick={onExportCsv}>
-                  ↓ CSV {entity === 'companies' ? '(10K)' : '(5K)'}
+                  ↓ CSV (10K)
                 </button>
-                {onExportPdf && (
-                  <button className="btn btn-pdf btn-sm" onClick={onExportPdf}>
-                    ↓ PDF (500)
-                  </button>
-                )}
               </div>
             )}
           </div>
@@ -279,12 +188,8 @@ function Results({
                 <div className="table-empty-title">No results found</div>
                 <div className="table-empty-sub">Try adjusting your search filters</div>
               </div>
-            ) : entity === 'companies' ? (
-              <CompaniesTable results={results} onRowClick={onRowClick} />
-            ) : entity === 'buyers' ? (
-              <BuyersTable results={results} activityLabels={activityLabels} onRowClick={onRowClick} />
             ) : (
-              <SuppliersTable results={results} onRowClick={onRowClick} />
+              <CompaniesTable results={results} onRowClick={onRowClick} />
             )}
           </div>
         </div>

@@ -1,12 +1,8 @@
 import { useState } from 'react'
 
-const REQUIRED = ['legal_name', 'country']
 const COUNTRIES = ['UK', 'USA', 'Canada']
 
-function AddCompanyModal({ onClose, adminPassword, onCreate }) {
-  const [step, setStep] = useState(adminPassword ? 'form' : 'auth')
-  const [authPw, setAuthPw] = useState('')
-  const [authError, setAuthError] = useState(null)
+function AddCompanyModal({ onClose, onCreate }) {
   const [form, setForm] = useState({
     legal_name: '', dba_name: '', country: '',
     industry_code: '', industry_description: '',
@@ -18,23 +14,11 @@ function AddCompanyModal({ onClose, adminPassword, onCreate }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [created, setCreated] = useState(null)
+  const [done, setDone] = useState(false)
 
   function handleField(e) {
     const { name, value } = e.target
     setForm(f => ({ ...f, [name]: value }))
-  }
-
-  async function handleAuthSubmit(e) {
-    e.preventDefault()
-    setAuthError(null)
-    const res = await fetch('/api/import/history', {
-      headers: { 'X-Admin-Password': authPw },
-    })
-    if (res.ok) {
-      setStep('form')
-    } else {
-      setAuthError('Incorrect password')
-    }
   }
 
   async function handleSubmit(e) {
@@ -49,13 +33,13 @@ function AddCompanyModal({ onClose, adminPassword, onCreate }) {
     for (const [k, v] of Object.entries(form)) {
       if (v !== '' && v !== null) payload[k] = v
     }
-    const result = await onCreate(payload, adminPassword || authPw || undefined)
+    const result = await onCreate(payload)
     setSaving(false)
     if (result.error) {
       setError(result.error)
     } else {
       setCreated(result.data)
-      setStep('done')
+      setDone(true)
     }
   }
 
@@ -95,28 +79,7 @@ function AddCompanyModal({ onClose, adminPassword, onCreate }) {
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
-        {step === 'auth' && (
-          <div className="modal-body">
-            <form className="auth-form" onSubmit={handleAuthSubmit}>
-              <div className="auth-icon">🔐</div>
-              <p className="auth-msg">Admin password required to add records</p>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  className="field-input"
-                  type="password"
-                  placeholder="Admin password"
-                  value={authPw}
-                  onChange={e => setAuthPw(e.target.value)}
-                  autoFocus
-                />
-                <button className="btn btn-primary" type="submit">Unlock</button>
-              </div>
-              {authError && <div className="save-error">{authError}</div>}
-            </form>
-          </div>
-        )}
-
-        {step === 'form' && (
+        {!done ? (
           <form onSubmit={handleSubmit}>
             <div className="modal-body">
               {error && <div className="save-error">{error}</div>}
@@ -158,9 +121,7 @@ function AddCompanyModal({ onClose, adminPassword, onCreate }) {
               </button>
             </div>
           </form>
-        )}
-
-        {step === 'done' && created && (
+        ) : (
           <div className="modal-body" style={{ textAlign: 'center', padding: '40px 24px' }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>✓</div>
             <div className="modal-title" style={{ marginBottom: 8 }}>Company Added</div>

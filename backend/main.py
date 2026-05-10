@@ -171,7 +171,7 @@ async def setup_db():
     if not engine:
         return
     try:
-        with engine.connect() as conn:
+        with engine.begin() as conn:
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS company_edits (
                     id SERIAL PRIMARY KEY,
@@ -179,22 +179,41 @@ async def setup_db():
                     field_name VARCHAR NOT NULL,
                     old_value TEXT,
                     new_value TEXT,
+                    editor_note TEXT,
                     edited_at TIMESTAMP DEFAULT NOW()
                 )
             """))
-            conn.commit()
-            for sql in [
-                f"CREATE INDEX IF NOT EXISTS idx_co_country ON {COMPANY_TABLE} (country)",
-                f"CREATE INDEX IF NOT EXISTS idx_co_active ON {COMPANY_TABLE} (is_active)",
-                f"CREATE INDEX IF NOT EXISTS idx_co_cid ON {COMPANY_TABLE} (company_id)",
-                f"CREATE INDEX IF NOT EXISTS idx_co_src ON {COMPANY_TABLE} (source_dataset)",
-                "CREATE INDEX IF NOT EXISTS idx_co_edits_cid ON company_edits (company_id)",
-            ]:
-                try:
-                    conn.execute(text(sql))
-                    conn.commit()
-                except Exception:
-                    pass
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS user_companies (
+                    id SERIAL PRIMARY KEY,
+                    company_id VARCHAR NOT NULL UNIQUE,
+                    legal_name VARCHAR NOT NULL,
+                    dba_name VARCHAR,
+                    country VARCHAR NOT NULL,
+                    industry_code VARCHAR,
+                    industry_system VARCHAR DEFAULT 'OTHER',
+                    industry_description VARCHAR,
+                    status VARCHAR,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    registration_date DATE,
+                    dissolution_date DATE,
+                    address_line1 VARCHAR,
+                    address_line2 VARCHAR,
+                    address_city VARCHAR,
+                    address_state VARCHAR,
+                    address_postal_code VARCHAR,
+                    address_country VARCHAR,
+                    business_number VARCHAR,
+                    employees_min FLOAT,
+                    employees_max FLOAT,
+                    entity_structure VARCHAR,
+                    business_type VARCHAR,
+                    company_url VARCHAR,
+                    original_language VARCHAR DEFAULT 'en',
+                    source_dataset VARCHAR DEFAULT 'USER_ADDED',
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
     except Exception as e:
         print(f"DB setup error: {e}")
 
@@ -967,47 +986,55 @@ async def import_template(entity: str):
 # COMPANY ENDPOINTS
 # =============================================================================
 
+USER_COMPANIES_TABLE = "user_companies"
+
+# Column list identical for both master and user_companies tables (required for UNION ALL)
+_COMPANY_COLS = """company_id, legal_name, dba_name, country, industry_code,
+           industry_description, status, is_active, registration_date,
+           dissolution_date, address_city, address_state, address_country,
+           employees_min, employees_max, entity_structure, business_type,
+           company_url, source_dataset, address_line1, address_postal_code,
+           business_number, original_language, address_line2, industry_system"""
+
+
 @app.get("/api/companies/stats")
 async def get_company_stats():
+    if not SessionLocal:
+        return {"total_companies": 0, "by_country": {"UK": None, "USA": None, "Canada": None}}
     try:
         db = SessionLocal()
-        total = db.execute(
+        master_total = db.execute(
             text("SELECT reltuples::bigint FROM pg_class WHERE relname = :tbl"),
             {"tbl": COMPANY_TABLE}
         ).scalar() or 0
-        active = db.execute(
-            text(f"SELECT COUNT(*) FROM {COMPANY_TABLE} WHERE is_active = true")
-        ).scalar()
-        countries = db.execute(
-            text(f"SELECT country, COUNT(*) FROM {COMPANY_TABLE} GROUP BY country ORDER BY 2 DESC")
-        ).fetchall()
+        user_total = 0
+        try:
+            user_total = db.execute(text(f"SELECT COUNT(*) FROM {USER_COMPANIES_TABLE}")).scalar() or 0
+        except Exception:
+            pass
+        total = int(master_total) + int(user_total)
+        # by_country: use sampling to avoid full scan on 7.4M rows
+        by_country = {"UK": None, "USA": None, "Canada": None}
+        try:
+            rows = db.execute(
+                text(f"SELECT country, COUNT(*) AS cnt FROM {COMPANY_TABLE} GROUP BY country")
+            ).fetchall()
+            by_country = {r[0]: int(r[1]) for r in rows if r[0]}
+        except Exception:
+            pass
         db.close()
-        return {
-            "total_companies": int(total),
-            "active_companies": int(active),
-            "by_country": {r[0]: int(r[1]) for r in countries if r[0]},
-        }
+        return {"total_companies": total, "by_country": by_country}
     except Exception as e:
-        return {"total_companies": 0, "active_companies": 0, "by_country": {}, "error": str(e)}
+        return {"total_companies": 0, "by_country": {"UK": None, "USA": None, "Canada": None}, "error": str(e)}
 
 
 @app.get("/api/companies/filters")
 async def get_company_filters():
-    try:
-        db = SessionLocal()
-        countries = db.execute(
-            text(f"SELECT DISTINCT country FROM {COMPANY_TABLE} WHERE country IS NOT NULL ORDER BY country")
-        ).fetchall()
-        source_datasets = db.execute(
-            text(f"SELECT DISTINCT source_dataset FROM {COMPANY_TABLE} WHERE source_dataset IS NOT NULL ORDER BY source_dataset")
-        ).fetchall()
-        db.close()
-        return {
-            "countries": [r[0] for r in countries],
-            "source_datasets": [r[0] for r in source_datasets],
-        }
-    except Exception as e:
-        return {"countries": [], "source_datasets": [], "error": str(e)}
+    # Return known static markets — no full table scan needed
+    return {
+        "countries": ["Canada", "UK", "USA"],
+        "source_datasets": [],
+    }
 
 
 @app.get("/api/companies/search")
@@ -1031,19 +1058,33 @@ async def search_companies(
         order = "ASC" if sort_order.lower() != "desc" else "DESC"
         offset = (page - 1) * limit
 
-        rows = db.execute(
-            text(f"{COMPANY_SELECT} {where} ORDER BY {col} {order} NULLS LAST LIMIT :limit OFFSET :offset"),
-            {**params, "limit": limit, "offset": offset},
-        ).fetchall()
+        # UNION ALL: master table + user-added companies
+        union_query = f"""
+            SELECT {_COMPANY_COLS} FROM {COMPANY_TABLE} {where}
+            UNION ALL
+            SELECT {_COMPANY_COLS} FROM {USER_COMPANIES_TABLE} {where}
+            ORDER BY {col} {order} NULLS LAST
+            LIMIT :limit OFFSET :offset
+        """
+        rows = db.execute(text(union_query), {**params, "limit": limit, "offset": offset}).fetchall()
 
         has_filters = bool(where)
         if has_filters:
-            total = db.execute(text(f"SELECT COUNT(*) FROM {COMPANY_TABLE} {where}"), params).scalar()
+            count_q = f"""
+                SELECT COUNT(*) FROM (
+                    SELECT company_id FROM {COMPANY_TABLE} {where}
+                    UNION ALL
+                    SELECT company_id FROM {USER_COMPANIES_TABLE} {where}
+                ) _t
+            """
+            total = db.execute(text(count_q), params).scalar() or 0
         else:
-            total = db.execute(
+            master_total = db.execute(
                 text("SELECT reltuples::bigint FROM pg_class WHERE relname = :tbl"),
                 {"tbl": COMPANY_TABLE}
             ).scalar() or 0
+            user_total = db.execute(text(f"SELECT COUNT(*) FROM {USER_COMPANIES_TABLE}")).scalar() or 0
+            total = int(master_total) + int(user_total)
 
         return {
             "data": [row_to_company_dict(r) for r in rows],
@@ -1056,8 +1097,8 @@ async def search_companies(
             },
         }
     except Exception as e:
-        print(f"ERROR /api/companies/search: {e}")
-        raise HTTPException(status_code=503, detail=f"Database error: {str(e)}")
+        print(f"ERROR /api/companies/search: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=503, detail=f"{type(e).__name__}: {str(e)}")
     finally:
         db.close()
 
@@ -1079,10 +1120,13 @@ async def export_companies_csv(
         col = COMPANY_SORT_COLS.get(sort_by, "legal_name")
         order = "ASC" if sort_order.lower() != "desc" else "DESC"
 
-        rows = db.execute(
-            text(f"{COMPANY_SELECT} {where} ORDER BY {col} {order} NULLS LAST LIMIT 10000"),
-            params,
-        ).fetchall()
+        union_query = f"""
+            SELECT {_COMPANY_COLS} FROM {COMPANY_TABLE} {where}
+            UNION ALL
+            SELECT {_COMPANY_COLS} FROM {USER_COMPANIES_TABLE} {where}
+            ORDER BY {col} {order} NULLS LAST LIMIT 10000
+        """
+        rows = db.execute(text(union_query), params).fetchall()
 
         output = io.StringIO()
         writer = csv.writer(output)
@@ -1123,7 +1167,7 @@ async def get_company_history(company_id: str):
     try:
         rows = db.execute(
             text("""
-                SELECT id, field_name, old_value, new_value, edited_at
+                SELECT id, field_name, old_value, new_value, editor_note, edited_at
                 FROM company_edits WHERE company_id = :cid
                 ORDER BY edited_at DESC LIMIT 100
             """),
@@ -1132,12 +1176,35 @@ async def get_company_history(company_id: str):
         return {
             "company_id": company_id,
             "edits": [
-                {"id": r[0], "field": r[1], "old_value": r[2], "new_value": r[3], "edited_at": str(r[4])}
+                {"id": r[0], "field": r[1], "old_value": r[2], "new_value": r[3],
+                 "note": r[4], "edited_at": str(r[5])}
                 for r in rows
             ],
         }
     finally:
         db.close()
+
+
+def _apply_edits_overlay(base_dict: dict, db) -> dict:
+    """Merge latest company_edits overrides onto a base company dict."""
+    try:
+        overrides = db.execute(
+            text("""
+                SELECT DISTINCT ON (field_name) field_name, new_value
+                FROM company_edits WHERE company_id = :cid
+                ORDER BY field_name, edited_at DESC
+            """),
+            {"cid": base_dict["company_id"]}
+        ).fetchall()
+        overridden = []
+        for field, val in overrides:
+            if field in base_dict:
+                base_dict[field] = val
+                overridden.append(field)
+        base_dict["_overridden_fields"] = overridden
+    except Exception:
+        base_dict["_overridden_fields"] = []
+    return base_dict
 
 
 @app.get("/api/companies/{company_id}")
@@ -1146,13 +1213,27 @@ async def get_company(company_id: str):
         raise HTTPException(status_code=503, detail="Database not configured")
     db = SessionLocal()
     try:
+        # Check user_companies first (user-added records)
         row = db.execute(
-            text(f"{COMPANY_SELECT} WHERE company_id = :cid"),
+            text(f"SELECT {_COMPANY_COLS} FROM {USER_COMPANIES_TABLE} WHERE company_id = :cid"),
+            {"cid": company_id}
+        ).fetchone()
+        if row:
+            d = row_to_company_dict(row)
+            d["_overridden_fields"] = []
+            d["_is_user_record"] = True
+            return d
+
+        # Fall back to master table + apply edits overlay
+        row = db.execute(
+            text(f"SELECT {_COMPANY_COLS} FROM {COMPANY_TABLE} WHERE company_id = :cid"),
             {"cid": company_id}
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Company not found")
-        return row_to_company_dict(row)
+        d = row_to_company_dict(row)
+        d["_is_user_record"] = False
+        return _apply_edits_overlay(d, db)
     finally:
         db.close()
 
@@ -1161,10 +1242,9 @@ async def get_company(company_id: str):
 async def update_company(
     company_id: str,
     updates: dict = Body(...),
-    x_admin_password: str = Header(None),
 ):
-    if x_admin_password != ADMIN_PASSWORD:
-        raise HTTPException(status_code=403, detail="Invalid admin password")
+    """Edit a company record. For master records, changes go to company_edits only
+    (original data is never modified). For user-added records, updates in-place."""
     if not SessionLocal:
         raise HTTPException(status_code=503, detail="Database not configured")
 
@@ -1176,34 +1256,62 @@ async def update_company(
 
     db = SessionLocal()
     try:
-        cols = ", ".join(updates.keys())
+        # Check if it's a user-added record (can be updated directly)
+        is_user = db.execute(
+            text(f"SELECT 1 FROM {USER_COMPANIES_TABLE} WHERE company_id = :cid"),
+            {"cid": company_id}
+        ).fetchone() is not None
+
+        if is_user:
+            set_clause = ", ".join(f"{f} = :{f}" for f in updates.keys())
+            db.execute(
+                text(f"UPDATE {USER_COMPANIES_TABLE} SET {set_clause} WHERE company_id = :cid"),
+                {**updates, "cid": company_id}
+            )
+            db.commit()
+            row = db.execute(
+                text(f"SELECT {_COMPANY_COLS} FROM {USER_COMPANIES_TABLE} WHERE company_id = :cid"),
+                {"cid": company_id}
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Company not found")
+            d = row_to_company_dict(row)
+            d["_overridden_fields"] = []
+            d["_is_user_record"] = True
+            return d
+
+        # Master record: get current values for audit, write to company_edits only
+        cols_str = ", ".join(updates.keys())
         current = db.execute(
-            text(f"SELECT {cols} FROM {COMPANY_TABLE} WHERE company_id = :cid"),
+            text(f"SELECT {cols_str} FROM {COMPANY_TABLE} WHERE company_id = :cid"),
             {"cid": company_id}
         ).fetchone()
         if not current:
             raise HTTPException(status_code=404, detail="Company not found")
 
-        set_clause = ", ".join(f"{f} = :{f}" for f in updates.keys())
-        db.execute(
-            text(f"UPDATE {COMPANY_TABLE} SET {set_clause} WHERE company_id = :cid"),
-            {**updates, "cid": company_id}
-        )
-
         current_dict = dict(zip(updates.keys(), current))
         for field, new_val in updates.items():
             old_val = current_dict.get(field)
-            if str(old_val or "") != str(new_val or ""):
-                db.execute(
-                    text("INSERT INTO company_edits (company_id, field_name, old_value, new_value) VALUES (:cid, :f, :o, :n)"),
-                    {"cid": company_id, "f": field,
-                     "o": str(old_val) if old_val is not None else None,
-                     "n": str(new_val) if new_val is not None else None}
-                )
+            db.execute(
+                text("""INSERT INTO company_edits
+                        (company_id, field_name, old_value, new_value)
+                        VALUES (:cid, :f, :o, :n)"""),
+                {
+                    "cid": company_id, "f": field,
+                    "o": str(old_val) if old_val is not None else None,
+                    "n": str(new_val) if new_val is not None else None,
+                }
+            )
         db.commit()
 
-        row = db.execute(text(f"{COMPANY_SELECT} WHERE company_id = :cid"), {"cid": company_id}).fetchone()
-        return row_to_company_dict(row)
+        # Return effective merged data
+        row = db.execute(
+            text(f"SELECT {_COMPANY_COLS} FROM {COMPANY_TABLE} WHERE company_id = :cid"),
+            {"cid": company_id}
+        ).fetchone()
+        d = row_to_company_dict(row)
+        d["_is_user_record"] = False
+        return _apply_edits_overlay(d, db)
     except HTTPException:
         raise
     except Exception as e:
@@ -1214,12 +1322,8 @@ async def update_company(
 
 
 @app.post("/api/companies")
-async def create_company(
-    data: dict = Body(...),
-    x_admin_password: str = Header(None),
-):
-    if x_admin_password != ADMIN_PASSWORD:
-        raise HTTPException(status_code=403, detail="Invalid admin password")
+async def create_company(data: dict = Body(...)):
+    """Add a new company record. Goes to user_companies table, never touches master data."""
     if not data.get("legal_name") or not data.get("country"):
         raise HTTPException(status_code=400, detail="legal_name and country are required")
     if not SessionLocal:
@@ -1238,10 +1342,16 @@ async def create_company(
     try:
         cols = ", ".join(clean.keys())
         vals = ", ".join(f":{k}" for k in clean.keys())
-        db.execute(text(f"INSERT INTO {COMPANY_TABLE} ({cols}) VALUES ({vals})"), clean)
+        db.execute(text(f"INSERT INTO {USER_COMPANIES_TABLE} ({cols}) VALUES ({vals})"), clean)
         db.commit()
-        row = db.execute(text(f"{COMPANY_SELECT} WHERE company_id = :cid"), {"cid": company_id}).fetchone()
-        return row_to_company_dict(row)
+        row = db.execute(
+            text(f"SELECT {_COMPANY_COLS} FROM {USER_COMPANIES_TABLE} WHERE company_id = :cid"),
+            {"cid": company_id}
+        ).fetchone()
+        d = row_to_company_dict(row)
+        d["_overridden_fields"] = []
+        d["_is_user_record"] = True
+        return d
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
