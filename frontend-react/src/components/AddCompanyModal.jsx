@@ -1,7 +1,5 @@
 import { useState } from 'react'
 
-const COUNTRIES = ['UK', 'USA', 'Canada']
-
 function AddCompanyModal({ onClose, onCreate }) {
   const [form, setForm] = useState({
     legal_name: '', dba_name: '', country: '',
@@ -88,7 +86,7 @@ function AddCompanyModal({ onClose, onCreate }) {
                   <div className="detail-section-title">Identity</div>
                   <F label="Legal Name" name="legal_name" required />
                   <F label="DBA / Trade Name" name="dba_name" />
-                  <F label="Country" name="country" required options={COUNTRIES} />
+                  <F label="Country (ISO-3, e.g. GBR)" name="country" required />
                   <F label="Status" name="status" />
                 </div>
                 <div className="add-form-section">

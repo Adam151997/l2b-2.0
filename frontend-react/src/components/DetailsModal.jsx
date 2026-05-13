@@ -164,7 +164,7 @@ function CompanyDetail({ item, onUpdate, onClose }) {
                 ? <EditField label="DBA / Trade Name" name="dba_name" value={form.dba_name} onChange={handleField} />
                 : <Field label="DBA / Trade Name" value={item.dba_name} />}
               {editMode
-                ? <EditField label="Country" name="country" value={form.country} onChange={handleField} options={['UK', 'USA', 'Canada']} />
+                ? <EditField label="Country (ISO-3)" name="country" value={form.country} onChange={handleField} />
                 : <Field label="Country" value={item.country} />}
               {editMode
                 ? <EditField label="Active" name="is_active" value={form.is_active} onChange={handleField} type="checkbox" />

@@ -126,7 +126,7 @@ function Results({
               <div className="table-empty-icon">🔍</div>
               <div className="table-empty-title">Start your search</div>
               <div className="table-empty-sub">
-                Search 7M+ companies by name, industry, country, or city
+                Search 9M+ companies by name, industry, country, or city
               </div>
               {onAddCompany && (
                 <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={onAddCompany}>

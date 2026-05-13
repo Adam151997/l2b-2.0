@@ -1,8 +1,8 @@
 import { useState, useRef } from 'react'
 
-function ImportBox({ entity, label, sub, adminPassword }) {
+function CompanyImportBox({ adminPassword }) {
   const [file, setFile] = useState(null)
-  const [status, setStatus] = useState(null) // null | 'uploading' | 'processing' | 'done' | 'error'
+  const [status, setStatus] = useState(null)
   const [progress, setProgress] = useState(0)
   const [jobResult, setJobResult] = useState(null)
   const inputRef = useRef()
@@ -22,7 +22,7 @@ function ImportBox({ entity, label, sub, adminPassword }) {
     form.append('file', file)
 
     try {
-      const res = await fetch(`/api/import/upload?entity=${entity}`, {
+      const res = await fetch('/api/companies/import', {
         method: 'POST',
         headers: { 'X-Admin-Password': adminPassword },
         body: form,
@@ -37,7 +37,7 @@ function ImportBox({ entity, label, sub, adminPassword }) {
       setStatus('processing')
       const jobId = data.job_id
       pollRef.current = setInterval(async () => {
-        const pr = await fetch(`/api/import/status/${jobId}`, {
+        const pr = await fetch(`/api/companies/import/status/${jobId}`, {
           headers: { 'X-Admin-Password': adminPassword },
         })
         const pData = await pr.json()
@@ -55,16 +55,17 @@ function ImportBox({ entity, label, sub, adminPassword }) {
   }
 
   function downloadTemplate() {
-    window.open(`/api/import/template/${entity}`, '_blank')
+    window.open('/api/import/template/companies', '_blank')
   }
-
-  const color = entity === 'buyers' ? 'var(--blue)' : 'var(--green)'
 
   return (
     <div className="import-box">
-      <div className="import-box-title" style={{ color }}>{label}</div>
+      <div className="import-box-title" style={{ color: 'var(--blue)' }}>Import Companies</div>
       <div className="import-box-sub">
-        {sub}{' '}
+        CSV must include: <code>legal_name</code>, <code>country</code> (ISO-3, e.g. GBR).
+        Optional: dba_name, status, industry_code, industry_description, address_city,
+        address_state, address_postal_code, address_line1, entity_structure, business_type,
+        registration_date, employees_min, employees_max, company_url.{' '}
         <span className="template-link" onClick={downloadTemplate}>
           Download CSV template
         </span>
@@ -99,8 +100,8 @@ function ImportBox({ entity, label, sub, adminPassword }) {
           )}
           {status === 'done' && jobResult && (
             <div className="status-text success">
-              ✓ Imported {jobResult.processed?.toLocaleString()} rows successfully
-              {jobResult.errors?.length > 0 && ` (${jobResult.errors.length} errors)`}
+              ✓ Imported {jobResult.processed?.toLocaleString()} companies successfully
+              {jobResult.errors?.length > 0 && ` (${jobResult.errors.length} rows skipped)`}
             </div>
           )}
           {status === 'error' && jobResult && (
@@ -148,8 +149,8 @@ function ImportModal({ onClose }) {
       <div className="modal wide">
         <div className="modal-header">
           <div>
-            <div className="modal-title">Data Import</div>
-            <div className="modal-sub">Import buyers or suppliers from a CSV file</div>
+            <div className="modal-title">Bulk Import</div>
+            <div className="modal-sub">Import companies in bulk from a CSV file</div>
           </div>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
@@ -175,20 +176,7 @@ function ImportModal({ onClose }) {
               )}
             </div>
           ) : (
-            <>
-              <ImportBox
-                entity="buyers"
-                label="Import Buyers"
-                sub="CSV must include: buyer_name, buyer_country. Optional: buyer_city, buyer_mainActivities, total_tenders_issued, total_budget_spent_eur."
-                adminPassword={adminPw}
-              />
-              <ImportBox
-                entity="suppliers"
-                label="Import Suppliers"
-                sub="CSV must include: bidder_name, bidder_country. Optional: total_contracts_won, lifetime_revenue_eur."
-                adminPassword={adminPw}
-              />
-            </>
+            <CompanyImportBox adminPassword={adminPw} />
           )}
         </div>
       </div>

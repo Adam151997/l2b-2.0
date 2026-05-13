@@ -1,7 +1,12 @@
 import { useState } from 'react'
 
 const COUNTRY_NAMES = {
-  CA:'Canada', UK:'United Kingdom', USA:'United States',
+  GBR: 'United Kingdom', USA: 'United States', CAN: 'Canada',
+  DEU: 'Germany', FRA: 'France', ITA: 'Italy', ESP: 'Spain',
+  NLD: 'Netherlands', AUS: 'Australia', IND: 'India',
+  CHN: 'China', JPN: 'Japan', KOR: 'South Korea',
+  VGB: 'British Virgin Islands', JEY: 'Jersey', IMN: 'Isle of Man',
+  GGY: 'Guernsey', NGA: 'Nigeria', KEN: 'Kenya', ZAF: 'South Africa',
 }
 
 function countryLabel(code) {
@@ -12,7 +17,6 @@ function SearchForm({ companyFilters, onSearch, loading }) {
   const [q, setQ] = useState('')
   const [country, setCountry] = useState('')
   const [industry, setIndustry] = useState('')
-  const [isActive, setIsActive] = useState('')
   const [sortBy, setSortBy] = useState('legal_name')
   const [sortOrder, setSortOrder] = useState('asc')
 
@@ -22,12 +26,11 @@ function SearchForm({ companyFilters, onSearch, loading }) {
     if (q.trim()) params.q = q.trim()
     if (country) params.country = country
     if (industry.trim()) params.industry = industry.trim()
-    if (isActive !== '') params.is_active = isActive
     onSearch(params)
   }
 
   function handleReset() {
-    setQ(''); setCountry(''); setIndustry(''); setIsActive('')
+    setQ(''); setCountry(''); setIndustry('')
     onSearch({ page: 1, sort_by: sortBy, sort_order: sortOrder })
   }
 
@@ -63,15 +66,6 @@ function SearchForm({ companyFilters, onSearch, loading }) {
               value={industry}
               onChange={e => setIndustry(e.target.value)}
             />
-          </div>
-
-          <div className="field-group" style={{ maxWidth: 130 }}>
-            <label className="field-label">Status</label>
-            <select className="field-select" value={isActive} onChange={e => setIsActive(e.target.value)}>
-              <option value="">All</option>
-              <option value="true">Active only</option>
-              <option value="false">Inactive only</option>
-            </select>
           </div>
 
           <div className="field-group" style={{ maxWidth: 160 }}>

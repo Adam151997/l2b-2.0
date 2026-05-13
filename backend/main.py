@@ -283,14 +283,19 @@ def require_admin(x_admin_password: str = Header(None)):
 
 COMPANY_SELECT = f"""
     SELECT company_id, company_name, doing_business_as, country, industry_codes,
-           industry_codes_raw, status, TRUE, incorporation_date,
+           industry_codes_raw, status, TRUE,
+           NULLIF(TRIM(incorporation_date), '')::date,
            NULL::date, city, state_province, country,
-           director_min, director_max, entity_type, business_types,
+           NULLIF(TRIM(director_min), '')::numeric,
+           NULLIF(TRIM(director_max), '')::numeric,
+           entity_type, business_types,
            url, source, address_line1, postal_code, business_numbers, 'en', address_line2, NULL
     FROM {COMPANY_TABLE}
 """
 
 # Columns aliased to standard names for UNION ALL with user_companies
+# Casts needed: director_min/max are text in PG (parquet str dtype); user_companies has FLOAT.
+# incorporation_date is text; user_companies.registration_date is DATE.
 _MASTER_COMPANY_COLS = """
     company_id,
     company_name AS legal_name,
@@ -300,13 +305,13 @@ _MASTER_COMPANY_COLS = """
     industry_codes_raw AS industry_description,
     status,
     TRUE::boolean AS is_active,
-    incorporation_date AS registration_date,
+    NULLIF(TRIM(incorporation_date), '')::date AS registration_date,
     NULL::date AS dissolution_date,
     city AS address_city,
     state_province AS address_state,
     country AS address_country,
-    director_min AS employees_min,
-    director_max AS employees_max,
+    NULLIF(TRIM(director_min), '')::numeric AS employees_min,
+    NULLIF(TRIM(director_max), '')::numeric AS employees_max,
     entity_type AS entity_structure,
     business_types AS business_type,
     url AS company_url,
@@ -1014,8 +1019,21 @@ async def import_template(entity: str):
     elif entity == "suppliers":
         headers = ["bidder_name", "bidder_country", "total_contracts_won", "lifetime_revenue_eur"]
         example = ["Example Corp", "DE", "15", "12500000.00"]
+    elif entity == "companies":
+        headers = [
+            "legal_name", "country", "dba_name", "status", "industry_code",
+            "industry_description", "address_line1", "address_city", "address_state",
+            "address_postal_code", "entity_structure", "business_type",
+            "registration_date", "employees_min", "employees_max", "company_url",
+        ]
+        example = [
+            "Acme Ltd", "GBR", "", "Active", "62020",
+            "Software Development", "1 High St", "London", "England",
+            "EC1A 1BB", "Limited Company", "For Profit",
+            "2015-06-01", "10", "50", "https://acme.example.com",
+        ]
     else:
-        raise HTTPException(status_code=400, detail="entity must be 'buyers' or 'suppliers'")
+        raise HTTPException(status_code=400, detail="entity must be 'buyers', 'suppliers', or 'companies'")
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -1027,6 +1045,138 @@ async def import_template(entity: str):
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=l2b_{entity}_template.csv"},
     )
+
+
+# In-memory tracker shared with buyer/supplier jobs
+company_import_jobs: dict = {}
+
+COMPANY_IMPORT_COLS = {
+    "legal_name", "dba_name", "country", "industry_code", "industry_description",
+    "status", "registration_date", "dissolution_date",
+    "address_line1", "address_line2", "address_city", "address_state",
+    "address_postal_code", "address_country", "business_number",
+    "employees_min", "employees_max", "entity_structure", "business_type",
+    "company_url", "industry_system",
+}
+
+
+def process_company_import(job_id: str, content: bytes):
+    job = company_import_jobs[job_id]
+    try:
+        text_content = content.decode("utf-8-sig")
+        reader = csv.DictReader(io.StringIO(text_content))
+        fieldnames = set(reader.fieldnames or [])
+
+        if "legal_name" not in fieldnames or "country" not in fieldnames:
+            job["status"] = "failed"
+            job["error"] = "CSV must include 'legal_name' and 'country' columns"
+            return
+
+        rows = list(reader)
+        job["total"] = len(rows)
+
+        db_gen = get_db()
+        db: Session = next(db_gen)
+        inserted, errors = 0, []
+
+        try:
+            for i, row in enumerate(rows):
+                try:
+                    legal_name = row.get("legal_name", "").strip()
+                    country = row.get("country", "").strip()
+                    if not legal_name or not country:
+                        errors.append(f"Row {i+2}: legal_name and country are required")
+                        continue
+
+                    cid = str(uuid.uuid4()).replace("-", "")[:12].upper()
+                    clean = {
+                        "company_id": cid,
+                        "legal_name": legal_name,
+                        "country": country,
+                        "is_active": True,
+                        "source_dataset": "CSV_IMPORT",
+                        "original_language": "en",
+                        "industry_system": "OTHER",
+                    }
+                    for col in COMPANY_IMPORT_COLS - {"legal_name", "country"}:
+                        v = row.get(col, "").strip()
+                        if v:
+                            if col in ("employees_min", "employees_max"):
+                                try:
+                                    clean[col] = float(v)
+                                except ValueError:
+                                    pass
+                            elif col in ("registration_date", "dissolution_date"):
+                                clean[col] = v or None
+                            else:
+                                clean[col] = v
+
+                    cols_sql = ", ".join(clean.keys())
+                    vals_sql = ", ".join(f":{k}" for k in clean.keys())
+                    db.execute(text(f"INSERT INTO user_companies ({cols_sql}) VALUES ({vals_sql})"), clean)
+                    inserted += 1
+                    if inserted % 100 == 0:
+                        db.commit()
+                        job["processed"] = inserted
+                except Exception as row_err:
+                    errors.append(f"Row {i+2}: {str(row_err)[:80]}")
+                    if len(errors) > 20:
+                        errors.append("Too many errors — stopping.")
+                        break
+
+            db.commit()
+        finally:
+            db.close()
+
+        job["status"] = "completed"
+        job["processed"] = inserted
+        job["errors"] = errors
+        job["completed_at"] = datetime.utcnow().isoformat()
+
+    except Exception as e:
+        job["status"] = "failed"
+        job["error"] = str(e)
+
+
+@app.post("/api/companies/import")
+async def import_companies(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    x_admin_password: str = Header(None),
+):
+    if x_admin_password != ADMIN_PASSWORD:
+        raise HTTPException(status_code=403, detail="Invalid admin password")
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files are accepted")
+
+    content = await file.read()
+    if len(content) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 50 MB)")
+
+    job_id = str(uuid.uuid4())
+    company_import_jobs[job_id] = {
+        "job_id": job_id,
+        "filename": file.filename,
+        "status": "processing",
+        "processed": 0,
+        "total": 0,
+        "errors": [],
+        "started_at": datetime.utcnow().isoformat(),
+        "completed_at": None,
+    }
+
+    background_tasks.add_task(process_company_import, job_id, content)
+    return {"job_id": job_id, "status": "processing", "message": "Import started"}
+
+
+@app.get("/api/companies/import/status/{job_id}")
+async def company_import_status(job_id: str, x_admin_password: str = Header(None)):
+    if x_admin_password != ADMIN_PASSWORD:
+        raise HTTPException(status_code=403, detail="Invalid admin password")
+    job = company_import_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
 
 
 # =============================================================================
@@ -1179,20 +1329,26 @@ async def create_search_indexes(background_tasks: BackgroundTasks):
                 conn.commit()
             with engine.connect() as conn:
                 conn.execute(text(f"""
-                    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_mc_legal_name_trgm
-                    ON {COMPANY_TABLE} USING gin(legal_name gin_trgm_ops)
+                    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_mc_company_name_trgm
+                    ON {COMPANY_TABLE} USING gin(company_name gin_trgm_ops)
+                """))
+                conn.commit()
+            with engine.connect() as conn:
+                conn.execute(text(f"""
+                    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_mc_dba_trgm
+                    ON {COMPANY_TABLE} USING gin(doing_business_as gin_trgm_ops)
+                """))
+                conn.commit()
+            with engine.connect() as conn:
+                conn.execute(text(f"""
+                    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_mc_city_trgm
+                    ON {COMPANY_TABLE} USING gin(city gin_trgm_ops)
                 """))
                 conn.commit()
             with engine.connect() as conn:
                 conn.execute(text(f"""
                     CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_mc_country
                     ON {COMPANY_TABLE}(country)
-                """))
-                conn.commit()
-            with engine.connect() as conn:
-                conn.execute(text(f"""
-                    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_mc_is_active
-                    ON {COMPANY_TABLE}(is_active)
                 """))
                 conn.commit()
             print("INDEX CREATION COMPLETE")
