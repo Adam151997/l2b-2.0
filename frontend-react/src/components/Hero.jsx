@@ -15,7 +15,7 @@ function Hero({ companyStats }) {
           Company <span>Data & Leads</span>
         </h1>
         <p className="hero-sub">
-          {fmt(companyStats.total_companies)} companies across 3 markets.
+          {fmt(companyStats.total_companies)} companies across global markets.
           Search, filter, export leads, and improve data quality.
         </p>
         <div className="stats-grid">
@@ -23,12 +23,6 @@ function Hero({ companyStats }) {
             <div className="stat-value">{fmt(companyStats.total_companies)}</div>
             <div className="stat-label">Total Companies</div>
           </div>
-          {['UK', 'USA', 'Canada'].map(c => (
-            <div key={c} className="stat-card">
-              <div className="stat-value">{fmt(byCountry[c])}</div>
-              <div className="stat-label">{c}</div>
-            </div>
-          ))}
         </div>
       </div>
     </section>

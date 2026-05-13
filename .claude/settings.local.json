@@ -7,7 +7,10 @@
       "Bash(Select-Object Name, PSIsContainer)",
       "Bash(npm run *)",
       "Bash(python -c \"import backend.main; print\\('Backend OK'\\)\")",
-      "Bash(python -m py_compile backend/main.py)"
+      "Bash(python -m py_compile backend/main.py)",
+      "Bash(cd /d E:\\\\l2b-2.0)",
+      "Bash(python -c \"import pandas as pd; df = pd.read_parquet\\('E:/Adham/L2B/master_companies_final.parquet', engine='pyarrow'\\); print\\('Columns:', list\\(df.columns\\)\\); print\\('Shape:', df.shape\\); print\\('Countries sample:', df['country'].value_counts\\(\\).head\\(20\\) if 'country' in df.columns else 'no country col'\\)\")",
+      "PowerShell(python -c \"import pandas as pd; df = pd.read_parquet\\('E:/Adham/L2B/master_companies_final.parquet', engine='pyarrow'\\); print\\('Columns:', list\\(df.columns\\)\\); print\\('Shape:', df.shape\\); print\\('Countries:', df['country'].value_counts\\(\\).head\\(20\\) if 'country' in df.columns else 'no country col'\\)\")"
     ]
   }
 }

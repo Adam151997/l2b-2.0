@@ -3,7 +3,7 @@ function Footer() {
     <footer className="footer">
       <div>
         <strong style={{ color: 'rgba(255,255,255,.7)' }}>L2B</strong>
-        {' · '}EU Business Intelligence
+        {' · '}Business Intelligence
         {' · '}
         <a href="/docs">API Docs</a>
         {' · '}

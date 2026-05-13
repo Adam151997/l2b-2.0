@@ -282,13 +282,41 @@ def require_admin(x_admin_password: str = Header(None)):
 
 
 COMPANY_SELECT = f"""
-    SELECT company_id, legal_name, dba_name, country, industry_code,
-           industry_description, status, is_active, registration_date,
-           dissolution_date, address_city, address_state, address_country,
-           employees_min, employees_max, entity_structure, business_type,
-           company_url, source_dataset, address_line1, address_postal_code,
-           business_number, original_language, address_line2, industry_system
+    SELECT company_id, company_name, doing_business_as, country, industry_codes,
+           industry_codes_raw, status, TRUE, incorporation_date,
+           NULL::date, city, state_province, country,
+           director_min, director_max, entity_type, business_types,
+           url, source, address_line1, postal_code, business_numbers, 'en', address_line2, NULL
     FROM {COMPANY_TABLE}
+"""
+
+# Columns aliased to standard names for UNION ALL with user_companies
+_MASTER_COMPANY_COLS = """
+    company_id,
+    company_name AS legal_name,
+    doing_business_as AS dba_name,
+    country,
+    industry_codes AS industry_code,
+    industry_codes_raw AS industry_description,
+    status,
+    TRUE::boolean AS is_active,
+    incorporation_date AS registration_date,
+    NULL::date AS dissolution_date,
+    city AS address_city,
+    state_province AS address_state,
+    country AS address_country,
+    director_min AS employees_min,
+    director_max AS employees_max,
+    entity_type AS entity_structure,
+    business_types AS business_type,
+    url AS company_url,
+    source AS source_dataset,
+    address_line1,
+    postal_code AS address_postal_code,
+    business_numbers AS business_number,
+    'en'::text AS original_language,
+    address_line2,
+    NULL::text AS industry_system
 """
 
 
@@ -327,6 +355,25 @@ def build_companies_where(q=None, country=None, industry=None, is_active=None, s
         params["is_active"] = is_active
     if source_dataset:
         conditions.append("source_dataset = :source_dataset")
+        params["source_dataset"] = source_dataset
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    return where, params
+
+
+def build_master_companies_where(q=None, country=None, industry=None, source_dataset=None):
+    """WHERE clause builder for master_companies (new column names)."""
+    conditions, params = [], {}
+    if q:
+        conditions.append("(company_name ILIKE :q OR doing_business_as ILIKE :q OR city ILIKE :q)")
+        params["q"] = f"%{q}%"
+    if country:
+        conditions.append("country = :country")
+        params["country"] = country
+    if industry:
+        conditions.append("industry_codes_raw ILIKE :industry")
+        params["industry"] = f"%{industry}%"
+    if source_dataset:
+        conditions.append("source = :source_dataset")
         params["source_dataset"] = source_dataset
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     return where, params
@@ -988,8 +1035,8 @@ async def import_template(entity: str):
 
 USER_COMPANIES_TABLE = "user_companies"
 
-# Column list identical for both master and user_companies tables (required for UNION ALL)
-_COMPANY_COLS = """company_id, legal_name, dba_name, country, industry_code,
+# Column list for user_companies table (old schema — standard names, no aliases needed)
+_USER_COMPANY_COLS = """company_id, legal_name, dba_name, country, industry_code,
            industry_description, status, is_active, registration_date,
            dissolution_date, address_city, address_state, address_country,
            employees_min, employees_max, entity_structure, business_type,
@@ -1013,11 +1060,10 @@ async def get_company_stats():
         except Exception:
             pass
         total = int(master_total) + int(user_total)
-        # by_country: use sampling to avoid full scan on 7.4M rows
-        by_country = {"UK": None, "USA": None, "Canada": None}
+        by_country = {}
         try:
             rows = db.execute(
-                text(f"SELECT country, COUNT(*) AS cnt FROM {COMPANY_TABLE} GROUP BY country")
+                text(f"SELECT country, COUNT(*) AS cnt FROM {COMPANY_TABLE} GROUP BY country ORDER BY cnt DESC LIMIT 50")
             ).fetchall()
             by_country = {r[0]: int(r[1]) for r in rows if r[0]}
         except Exception:
@@ -1025,16 +1071,22 @@ async def get_company_stats():
         db.close()
         return {"total_companies": total, "by_country": by_country}
     except Exception as e:
-        return {"total_companies": 0, "by_country": {"UK": None, "USA": None, "Canada": None}, "error": str(e)}
+        return {"total_companies": 0, "by_country": {}, "error": str(e)}
 
 
 @app.get("/api/companies/filters")
 async def get_company_filters():
-    # Return known static markets — no full table scan needed
-    return {
-        "countries": ["Canada", "UK", "USA"],
-        "source_datasets": [],
-    }
+    if not SessionLocal:
+        return {"countries": [], "source_datasets": []}
+    try:
+        db = SessionLocal()
+        rows = db.execute(
+            text(f"SELECT DISTINCT country FROM {COMPANY_TABLE} WHERE country IS NOT NULL ORDER BY country LIMIT 200")
+        ).fetchall()
+        db.close()
+        return {"countries": [r[0] for r in rows], "source_datasets": []}
+    except Exception:
+        return {"countries": [], "source_datasets": []}
 
 
 @app.get("/api/companies/search")
@@ -1053,7 +1105,8 @@ async def search_companies(
         raise HTTPException(status_code=503, detail="Database not configured")
     db = SessionLocal()
     try:
-        where, params = build_companies_where(q, country, industry, is_active, source_dataset)
+        master_where, params = build_master_companies_where(q, country, industry, source_dataset)
+        user_where, _ = build_companies_where(q, country, industry, is_active, source_dataset)
         col = COMPANY_SORT_COLS.get(sort_by, "legal_name")
         order = "ASC" if sort_order.lower() != "desc" else "DESC"
         offset = (page - 1) * limit
@@ -1061,9 +1114,9 @@ async def search_companies(
         # Fetch one extra row to detect whether more pages exist — avoids COUNT(*) scan
         fetch_limit = limit + 1
         union_query = f"""
-            SELECT {_COMPANY_COLS} FROM {COMPANY_TABLE} {where}
+            SELECT {_MASTER_COMPANY_COLS} FROM {COMPANY_TABLE} {master_where}
             UNION ALL
-            SELECT {_COMPANY_COLS} FROM {USER_COMPANIES_TABLE} {where}
+            SELECT {_USER_COMPANY_COLS} FROM {USER_COMPANIES_TABLE} {user_where}
             ORDER BY {col} {order} NULLS LAST
             LIMIT :limit OFFSET :offset
         """
@@ -1071,7 +1124,7 @@ async def search_companies(
         has_more = len(rows) == fetch_limit
         rows = rows[:limit]
 
-        has_filters = bool(where)
+        has_filters = bool(master_where)
         if not has_filters:
             master_total = db.execute(
                 text("SELECT reltuples::bigint FROM pg_class WHERE relname = :tbl"),
@@ -1163,14 +1216,15 @@ async def export_companies_csv(
     db_gen = get_db()
     db: Session = next(db_gen)
     try:
-        where, params = build_companies_where(q, country, industry, is_active, source_dataset)
+        master_where, params = build_master_companies_where(q, country, industry, source_dataset)
+        user_where, _ = build_companies_where(q, country, industry, is_active, source_dataset)
         col = COMPANY_SORT_COLS.get(sort_by, "legal_name")
         order = "ASC" if sort_order.lower() != "desc" else "DESC"
 
         union_query = f"""
-            SELECT {_COMPANY_COLS} FROM {COMPANY_TABLE} {where}
+            SELECT {_MASTER_COMPANY_COLS} FROM {COMPANY_TABLE} {master_where}
             UNION ALL
-            SELECT {_COMPANY_COLS} FROM {USER_COMPANIES_TABLE} {where}
+            SELECT {_USER_COMPANY_COLS} FROM {USER_COMPANIES_TABLE} {user_where}
             ORDER BY {col} {order} NULLS LAST LIMIT 10000
         """
         rows = db.execute(text(union_query), params).fetchall()
@@ -1262,7 +1316,7 @@ async def get_company(company_id: str):
     try:
         # Check user_companies first (user-added records)
         row = db.execute(
-            text(f"SELECT {_COMPANY_COLS} FROM {USER_COMPANIES_TABLE} WHERE company_id = :cid"),
+            text(f"SELECT {_USER_COMPANY_COLS} FROM {USER_COMPANIES_TABLE} WHERE company_id = :cid"),
             {"cid": company_id}
         ).fetchone()
         if row:
@@ -1273,7 +1327,7 @@ async def get_company(company_id: str):
 
         # Fall back to master table + apply edits overlay
         row = db.execute(
-            text(f"SELECT {_COMPANY_COLS} FROM {COMPANY_TABLE} WHERE company_id = :cid"),
+            text(f"{COMPANY_SELECT} WHERE company_id = :cid"),
             {"cid": company_id}
         ).fetchone()
         if not row:
@@ -1327,25 +1381,21 @@ async def update_company(
             d["_is_user_record"] = True
             return d
 
-        # Master record: get current values for audit, write to company_edits only
-        cols_str = ", ".join(updates.keys())
-        current = db.execute(
-            text(f"SELECT {cols_str} FROM {COMPANY_TABLE} WHERE company_id = :cid"),
+        # Master record: verify it exists, write edits to company_edits only
+        exists = db.execute(
+            text(f"SELECT 1 FROM {COMPANY_TABLE} WHERE company_id = :cid"),
             {"cid": company_id}
         ).fetchone()
-        if not current:
+        if not exists:
             raise HTTPException(status_code=404, detail="Company not found")
 
-        current_dict = dict(zip(updates.keys(), current))
         for field, new_val in updates.items():
-            old_val = current_dict.get(field)
             db.execute(
                 text("""INSERT INTO company_edits
                         (company_id, field_name, old_value, new_value)
-                        VALUES (:cid, :f, :o, :n)"""),
+                        VALUES (:cid, :f, NULL, :n)"""),
                 {
                     "cid": company_id, "f": field,
-                    "o": str(old_val) if old_val is not None else None,
                     "n": str(new_val) if new_val is not None else None,
                 }
             )
@@ -1353,7 +1403,7 @@ async def update_company(
 
         # Return effective merged data
         row = db.execute(
-            text(f"SELECT {_COMPANY_COLS} FROM {COMPANY_TABLE} WHERE company_id = :cid"),
+            text(f"{COMPANY_SELECT} WHERE company_id = :cid"),
             {"cid": company_id}
         ).fetchone()
         d = row_to_company_dict(row)
