@@ -1520,14 +1520,33 @@ async def update_company(
         ).fetchone() is not None
 
         if is_user:
+            # Snapshot old values before update so history shows diffs
+            old_row = db.execute(
+                text(f"SELECT {_USER_COMPANY_COLS} FROM {USER_COMPANIES_TABLE} WHERE company_id = :cid"),
+                {"cid": company_id}
+            ).fetchone()
+            old_dict = row_to_company_dict(old_row) if old_row else {}
+
             set_clause = ", ".join(f"{f} = :{f}" for f in updates.keys())
             db.execute(
                 text(f"UPDATE {USER_COMPANIES_TABLE} SET {set_clause} WHERE company_id = :cid"),
                 {**updates, "cid": company_id}
             )
+            for field, new_val in updates.items():
+                old_val = old_dict.get(field)
+                db.execute(
+                    text("""INSERT INTO company_edits
+                            (company_id, field_name, old_value, new_value)
+                            VALUES (:cid, :f, :o, :n)"""),
+                    {
+                        "cid": company_id, "f": field,
+                        "o": str(old_val) if old_val is not None else None,
+                        "n": str(new_val) if new_val is not None else None,
+                    }
+                )
             db.commit()
             row = db.execute(
-                text(f"SELECT {_COMPANY_COLS} FROM {USER_COMPANIES_TABLE} WHERE company_id = :cid"),
+                text(f"SELECT {_USER_COMPANY_COLS} FROM {USER_COMPANIES_TABLE} WHERE company_id = :cid"),
                 {"cid": company_id}
             ).fetchone()
             if not row:
@@ -1598,7 +1617,7 @@ async def create_company(data: dict = Body(...)):
         db.execute(text(f"INSERT INTO {USER_COMPANIES_TABLE} ({cols}) VALUES ({vals})"), clean)
         db.commit()
         row = db.execute(
-            text(f"SELECT {_COMPANY_COLS} FROM {USER_COMPANIES_TABLE} WHERE company_id = :cid"),
+            text(f"SELECT {_USER_COMPANY_COLS} FROM {USER_COMPANIES_TABLE} WHERE company_id = :cid"),
             {"cid": company_id}
         ).fetchone()
         d = row_to_company_dict(row)
