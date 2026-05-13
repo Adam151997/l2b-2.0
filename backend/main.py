@@ -170,52 +170,59 @@ import_jobs: dict = {}
 async def setup_db():
     if not engine:
         return
-    try:
-        with engine.begin() as conn:
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS company_edits (
-                    id SERIAL PRIMARY KEY,
-                    company_id VARCHAR NOT NULL,
-                    field_name VARCHAR NOT NULL,
-                    old_value TEXT,
-                    new_value TEXT,
-                    editor_note TEXT,
-                    edited_at TIMESTAMP DEFAULT NOW()
-                )
-            """))
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS user_companies (
-                    id SERIAL PRIMARY KEY,
-                    company_id VARCHAR NOT NULL UNIQUE,
-                    legal_name VARCHAR NOT NULL,
-                    dba_name VARCHAR,
-                    country VARCHAR NOT NULL,
-                    industry_code VARCHAR,
-                    industry_system VARCHAR DEFAULT 'OTHER',
-                    industry_description VARCHAR,
-                    status VARCHAR,
-                    is_active BOOLEAN DEFAULT TRUE,
-                    registration_date DATE,
-                    dissolution_date DATE,
-                    address_line1 VARCHAR,
-                    address_line2 VARCHAR,
-                    address_city VARCHAR,
-                    address_state VARCHAR,
-                    address_postal_code VARCHAR,
-                    address_country VARCHAR,
-                    business_number VARCHAR,
-                    employees_min FLOAT,
-                    employees_max FLOAT,
-                    entity_structure VARCHAR,
-                    business_type VARCHAR,
-                    company_url VARCHAR,
-                    original_language VARCHAR DEFAULT 'en',
-                    source_dataset VARCHAR DEFAULT 'USER_ADDED',
-                    created_at TIMESTAMP DEFAULT NOW()
-                )
-            """))
-    except Exception as e:
-        print(f"DB setup error: {e}")
+    _DDL = [
+        (
+            "company_edits",
+            """CREATE TABLE IF NOT EXISTS company_edits (
+                id SERIAL PRIMARY KEY,
+                company_id VARCHAR NOT NULL,
+                field_name VARCHAR NOT NULL,
+                old_value TEXT,
+                new_value TEXT,
+                editor_note TEXT,
+                edited_at TIMESTAMP DEFAULT NOW()
+            )""",
+        ),
+        (
+            "user_companies",
+            """CREATE TABLE IF NOT EXISTS user_companies (
+                id SERIAL PRIMARY KEY,
+                company_id VARCHAR NOT NULL UNIQUE,
+                legal_name VARCHAR NOT NULL,
+                dba_name VARCHAR,
+                country VARCHAR NOT NULL,
+                industry_code VARCHAR,
+                industry_system VARCHAR DEFAULT 'OTHER',
+                industry_description VARCHAR,
+                status VARCHAR,
+                is_active BOOLEAN DEFAULT TRUE,
+                registration_date DATE,
+                dissolution_date DATE,
+                address_line1 VARCHAR,
+                address_line2 VARCHAR,
+                address_city VARCHAR,
+                address_state VARCHAR,
+                address_postal_code VARCHAR,
+                address_country VARCHAR,
+                business_number VARCHAR,
+                employees_min FLOAT,
+                employees_max FLOAT,
+                entity_structure VARCHAR,
+                business_type VARCHAR,
+                company_url VARCHAR,
+                original_language VARCHAR DEFAULT 'en',
+                source_dataset VARCHAR DEFAULT 'USER_ADDED',
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+        ),
+    ]
+    for table_name, ddl in _DDL:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(ddl))
+            print(f"DB setup OK: {table_name}")
+        except Exception as e:
+            print(f"DB setup ERROR ({table_name}): {e}")
 
 # =============================================================================
 # HELPERS
@@ -1438,6 +1445,9 @@ async def get_company_history(company_id: str):
                 for r in rows
             ],
         }
+    except Exception as e:
+        print(f"ERROR /api/companies/{company_id}/history: {type(e).__name__}: {e}")
+        return {"company_id": company_id, "edits": [], "db_error": str(e)}
     finally:
         db.close()
 
@@ -1556,32 +1566,33 @@ async def update_company(
             d["_is_user_record"] = True
             return d
 
-        # Master record: verify it exists, write edits to company_edits only
-        exists = db.execute(
-            text(f"SELECT 1 FROM {COMPANY_TABLE} WHERE company_id = :cid"),
+        # Master record: fetch current state (with any existing overlays) for old_value capture
+        master_row = db.execute(
+            text(f"{COMPANY_SELECT} WHERE company_id = :cid"),
             {"cid": company_id}
         ).fetchone()
-        if not exists:
+        if not master_row:
             raise HTTPException(status_code=404, detail="Company not found")
 
+        current_dict = row_to_company_dict(master_row)
+        _apply_edits_overlay(current_dict, db)  # get effective current values
+
         for field, new_val in updates.items():
+            old_val = current_dict.get(field)
             db.execute(
                 text("""INSERT INTO company_edits
                         (company_id, field_name, old_value, new_value)
-                        VALUES (:cid, :f, NULL, :n)"""),
+                        VALUES (:cid, :f, :o, :n)"""),
                 {
                     "cid": company_id, "f": field,
+                    "o": str(old_val) if old_val is not None else None,
                     "n": str(new_val) if new_val is not None else None,
                 }
             )
         db.commit()
 
         # Return effective merged data
-        row = db.execute(
-            text(f"{COMPANY_SELECT} WHERE company_id = :cid"),
-            {"cid": company_id}
-        ).fetchone()
-        d = row_to_company_dict(row)
+        d = row_to_company_dict(master_row)
         d["_is_user_record"] = False
         return _apply_edits_overlay(d, db)
     except HTTPException:

@@ -53,6 +53,11 @@ function App() {
   const handleRowClick = (item) => {
     setSelected(item)
     setShowDetails(true)
+    // Background fetch: get canonical data with any stored edits applied
+    fetch(`/api/companies/${item.company_id}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setSelected(data) })
+      .catch(() => {})
   }
 
   const handleCompanyUpdate = async (companyId, updates) => {

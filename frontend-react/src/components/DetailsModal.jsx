@@ -67,8 +67,13 @@ function CompanyDetail({ item, onUpdate, onClose }) {
     setHistoryLoading(true)
     try {
       const res = await fetch(`/api/companies/${item.company_id}/history`)
+      if (!res.ok) { setHistory([]); return }
       const data = await res.json()
-      setHistory(data.edits || [])
+      if (data.db_error) {
+        setHistory([{ _error: data.db_error }])
+      } else {
+        setHistory(data.edits || [])
+      }
     } catch {
       setHistory([])
     } finally {
@@ -266,7 +271,16 @@ function CompanyDetail({ item, onUpdate, onClose }) {
 
       {tab === 'history' && (
         <div className="modal-body">
-          {historyLoading && <div style={{ textAlign: 'center', padding: 32 }}><div className="spinner" style={{ margin: '0 auto' }} /></div>}
+          {historyLoading && (
+            <div style={{ textAlign: 'center', padding: 32 }}>
+              <div className="spinner" style={{ margin: '0 auto' }} />
+            </div>
+          )}
+          {!historyLoading && history !== null && history.length === 1 && history[0]?._error && (
+            <div className="save-error" style={{ marginBottom: 0 }}>
+              History unavailable — DB error: {history[0]._error}
+            </div>
+          )}
           {!historyLoading && history !== null && history.length === 0 && (
             <div className="table-empty" style={{ padding: '40px 0' }}>
               <div className="table-empty-icon">📋</div>
@@ -274,7 +288,7 @@ function CompanyDetail({ item, onUpdate, onClose }) {
               <div className="table-empty-sub">Changes to this record will appear here</div>
             </div>
           )}
-          {!historyLoading && history && history.length > 0 && (
+          {!historyLoading && history && history.length > 0 && !history[0]?._error && (
             <table className="history-table">
               <thead>
                 <tr>
