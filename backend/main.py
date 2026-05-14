@@ -74,8 +74,8 @@ else:
 # =============================================================================
 
 app = FastAPI(
-    title="L2B.click EU Tender Intelligence",
-    description="Search EU procurement buyers and suppliers",
+    title="L2B.click Business Intelligence",
+    description="Search companies, buyers, and suppliers worldwide",
     version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -738,7 +738,7 @@ async def export_buyers_pdf(
     pdf.set_fill_color(30, 64, 175)
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 12, "L2B.click - EU Tender Buyers", new_x="LMARGIN", new_y="NEXT", align="C", fill=True)
+    pdf.cell(0, 12, "L2B.click - Buyers", new_x="LMARGIN", new_y="NEXT", align="C", fill=True)
     pdf.set_font("Helvetica", "", 9)
     pdf.set_fill_color(59, 130, 246)
     pdf.cell(0, 7, f"{search_summary}  |  Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}  |  {len(rows)} records",
@@ -832,7 +832,7 @@ async def export_suppliers_pdf(
     pdf.set_fill_color(5, 150, 105)
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 12, "L2B.click - EU Tender Suppliers", new_x="LMARGIN", new_y="NEXT", align="C", fill=True)
+    pdf.cell(0, 12, "L2B.click - Suppliers", new_x="LMARGIN", new_y="NEXT", align="C", fill=True)
     pdf.set_font("Helvetica", "", 9)
     pdf.set_fill_color(16, 185, 129)
     pdf.cell(0, 7, f"{search_summary}  |  Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}  |  {len(rows)} records",

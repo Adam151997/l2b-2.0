@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useLayoutEffect } from 'react'
 import Header from './components/Header'
 import Hero from './components/Hero'
 import SearchForm from './components/SearchForm'
@@ -9,6 +9,18 @@ import ImportModal from './components/ImportModal'
 import Footer from './components/Footer'
 
 function App() {
+  const [theme, setTheme] = useState(() => localStorage.getItem('l2b-theme') || 'dark')
+
+  // Apply theme class before paint to avoid flash
+  useLayoutEffect(() => {
+    document.documentElement.classList.toggle('light', theme === 'light')
+    localStorage.setItem('l2b-theme', theme)
+  }, [theme])
+
+  const toggleTheme = useCallback(() => {
+    setTheme(t => t === 'dark' ? 'light' : 'dark')
+  }, [])
+
   const [companyStats, setCompanyStats] = useState({ total_companies: 0, active_companies: 0, by_country: {} })
   const [companyFilters, setCompanyFilters] = useState({ countries: [], source_datasets: [] })
 
@@ -99,6 +111,8 @@ function App() {
       <Header
         onAdminClick={() => setShowImport(true)}
         onAddCompany={() => setShowAddCompany(true)}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
       <Hero companyStats={companyStats} />
 

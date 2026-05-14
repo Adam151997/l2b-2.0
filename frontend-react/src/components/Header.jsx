@@ -1,4 +1,4 @@
-function Header({ onAdminClick, onAddCompany }) {
+function Header({ onAdminClick, onAddCompany, theme, onToggleTheme }) {
   return (
     <header className="header">
       <div className="header-inner">
@@ -7,6 +7,13 @@ function Header({ onAdminClick, onAddCompany }) {
           <span className="logo-text">L2B</span>
         </div>
         <nav className="header-nav">
+          <button
+            className="nav-btn theme-btn"
+            onClick={onToggleTheme}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {theme === 'dark' ? '☀' : '☾'}
+          </button>
           <a className="nav-btn" href="/docs" target="_blank" rel="noreferrer">
             API
           </a>

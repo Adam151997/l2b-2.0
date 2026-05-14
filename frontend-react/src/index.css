@@ -25,6 +25,27 @@
   --sh-lg:        0 12px 40px rgba(0,0,0,0.7);
 }
 
+:root.light {
+  --bg:           #f4f4f8;
+  --bg-2:         #ffffff;
+  --bg-3:         #eaeaf0;
+  --border:       #dddde8;
+  --border-2:     #cdcdd8;
+  --accent:       #5865f2;
+  --accent-dim:   #3d4ac7;
+  --accent-glow:  rgba(88,101,242,0.15);
+  --teal:         #00a888;
+  --teal-glow:    rgba(0,168,136,0.14);
+  --danger:       #e0324f;
+  --danger-glow:  rgba(224,50,79,0.14);
+  --amber:        #d97706;
+  --text:         #14142a;
+  --text-2:       #52527a;
+  --text-3:       #9090b0;
+  --sh:           0 2px 12px rgba(0,0,0,0.07);
+  --sh-lg:        0 12px 40px rgba(0,0,0,0.13);
+}
+
 body {
   font-family: var(--sans);
   background: var(--bg);
@@ -84,6 +105,7 @@ body {
 .nav-btn.admin-btn:hover { background: rgba(245,158,11,.07); border-color: var(--amber); color: var(--amber); }
 .nav-btn.add-btn { border-color: rgba(0,212,170,.25); color: var(--teal); }
 .nav-btn.add-btn:hover { background: rgba(0,212,170,.07); border-color: var(--teal); }
+.nav-btn.theme-btn { font-size: 14px; padding: 5px 9px; min-width: 32px; justify-content: center; }
 
 /* ────────────────── HERO ────────────────── */
 .hero {
@@ -149,7 +171,7 @@ body {
   -webkit-appearance: none; appearance: none;
 }
 .field-select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%2340405a' d='M5 7L0.5 2.5h9z'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%239090b0' d='M5 7L0.5 2.5h9z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
   padding-right: 26px;
