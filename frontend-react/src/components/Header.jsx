@@ -1,4 +1,4 @@
-function Header({ onAdminClick, onAddCompany, theme, onToggleTheme }) {
+function Header({ onAdminClick, onAddCompany, onAnalyticsClick, theme, onToggleTheme }) {
   return (
     <header className="header">
       <div className="header-inner">
@@ -14,15 +14,10 @@ function Header({ onAdminClick, onAddCompany, theme, onToggleTheme }) {
           >
             {theme === 'dark' ? '☀' : '☾'}
           </button>
-          <a className="nav-btn" href="/docs" target="_blank" rel="noreferrer">
-            API
-          </a>
-          <button className="nav-btn add-btn" onClick={onAddCompany}>
-            + Add Company
-          </button>
-          <button className="nav-btn admin-btn" onClick={onAdminClick}>
-            ⚙ Import
-          </button>
+          <a className="nav-btn" href="/docs" target="_blank" rel="noreferrer">API</a>
+          <button className="nav-btn" onClick={onAnalyticsClick}>📊 Analytics</button>
+          <button className="nav-btn add-btn" onClick={onAddCompany}>+ Add Company</button>
+          <button className="nav-btn admin-btn" onClick={onAdminClick}>⚙ Import</button>
         </nav>
       </div>
     </header>

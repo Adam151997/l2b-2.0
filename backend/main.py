@@ -14,6 +14,7 @@ import csv
 import io
 from datetime import datetime
 import uuid
+from fpdf import FPDF
 
 load_dotenv()
 
@@ -541,6 +542,26 @@ async def get_company_stats():
         return {"total_companies": 0, "by_country": {}, "error": str(e)}
 
 
+@app.get("/api/companies/stats/industry")
+async def get_industry_stats():
+    if not SessionLocal:
+        return {"industries": []}
+    try:
+        db = SessionLocal()
+        rows = db.execute(text(f"""
+            SELECT industry_codes_raw, COUNT(*) AS cnt
+            FROM {COMPANY_TABLE}
+            WHERE industry_codes_raw IS NOT NULL AND TRIM(industry_codes_raw) != ''
+            GROUP BY industry_codes_raw
+            ORDER BY cnt DESC
+            LIMIT 20
+        """)).fetchall()
+        db.close()
+        return {"industries": [{"name": r[0], "count": int(r[1])} for r in rows]}
+    except Exception as e:
+        return {"industries": [], "error": str(e)}
+
+
 @app.get("/api/companies/filters")
 async def get_company_filters():
     if not SessionLocal:
@@ -750,6 +771,147 @@ async def export_companies_csv(
             ])
 
         filename = f"l2b_companies_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.csv"
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    finally:
+        db.close()
+
+
+def _safe_pdf(s, maxlen=None):
+    if not isinstance(s, str):
+        return ''
+    out = s.encode('ascii', 'replace').decode('ascii').replace('?', ' ').strip()
+    return out[:maxlen] if maxlen else out
+
+
+@app.get("/api/companies/export/pdf")
+async def export_companies_pdf(
+    q: Optional[str] = Query(None),
+    country: Optional[str] = Query(None),
+    industry: Optional[str] = Query(None),
+    is_active: Optional[bool] = Query(None),
+    source_dataset: Optional[str] = Query(None),
+    sort_by: str = Query("legal_name"),
+    sort_order: str = Query("asc"),
+):
+    db_gen = get_db()
+    db: Session = next(db_gen)
+    try:
+        master_where, params = build_master_companies_where(q, country, industry, source_dataset)
+        user_where, _ = build_companies_where(q, country, industry, is_active, source_dataset)
+        col = COMPANY_SORT_COLS.get(sort_by, "legal_name")
+        order = "ASC" if sort_order.lower() != "desc" else "DESC"
+
+        union_query = f"""
+            SELECT {_MASTER_COMPANY_COLS} FROM {COMPANY_TABLE} {master_where}
+            UNION ALL
+            SELECT {_USER_COMPANY_COLS} FROM {USER_COMPANIES_TABLE} {user_where}
+            ORDER BY {col} {order} NULLS LAST LIMIT 500
+        """
+        rows = db.execute(text(union_query), params).fetchall()
+
+        pdf = FPDF(orientation="L", unit="mm", format="A4")
+        pdf.set_margins(8, 8, 8)
+        pdf.add_page()
+
+        # Title
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 8, "L2B.click — Company Export", ln=True, align="C")
+        pdf.set_font("Helvetica", "", 7)
+        pdf.cell(0, 5,
+            f"Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC  |  {len(rows)} records",
+            ln=True, align="C")
+        pdf.ln(3)
+
+        col_widths = [80, 18, 68, 32, 25, 50]
+        headers = ["Company Name", "Country", "Industry", "City", "Status", "Website"]
+
+        # Header row
+        pdf.set_font("Helvetica", "B", 7)
+        pdf.set_fill_color(40, 40, 65)
+        pdf.set_text_color(240, 240, 255)
+        for w, h in zip(col_widths, headers):
+            pdf.cell(w, 6, h, border=0, fill=True)
+        pdf.ln()
+
+        # Data rows
+        pdf.set_text_color(20, 20, 30)
+        for i, r in enumerate(rows):
+            if i % 2 == 0:
+                pdf.set_fill_color(245, 245, 250)
+            else:
+                pdf.set_fill_color(255, 255, 255)
+            pdf.set_font("Helvetica", "", 6.5)
+            vals = [
+                _safe_pdf(r[1], 60),
+                _safe_pdf(r[3], 6),
+                _safe_pdf(r[5], 55),
+                _safe_pdf(r[10], 28),
+                _safe_pdf(r[6], 20),
+                _safe_pdf(r[17], 48),
+            ]
+            for w, v in zip(col_widths, vals):
+                pdf.cell(w, 5, v, border=0, fill=True)
+            pdf.ln()
+
+        pdf_bytes = bytes(pdf.output())
+        filename = f"l2b_companies_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.pdf"
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    finally:
+        db.close()
+
+
+@app.post("/api/companies/export/selected/csv")
+async def export_selected_csv(body: dict = Body(...)):
+    company_ids = body.get("company_ids", [])
+    if not company_ids:
+        raise HTTPException(status_code=400, detail="No company_ids provided")
+    if len(company_ids) > 1000:
+        raise HTTPException(status_code=400, detail="Max 1000 records per export")
+
+    db_gen = get_db()
+    db: Session = next(db_gen)
+    try:
+        rows = db.execute(
+            text(f"""
+                SELECT {_MASTER_COMPANY_COLS} FROM {COMPANY_TABLE}
+                WHERE company_id = ANY(:ids)
+                UNION ALL
+                SELECT {_USER_COMPANY_COLS} FROM {USER_COMPANIES_TABLE}
+                WHERE company_id = ANY(:ids)
+            """),
+            {"ids": company_ids}
+        ).fetchall()
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            "Company ID", "Legal Name", "DBA Name", "Country", "Industry Code",
+            "Industry Description", "Status", "Is Active", "Registration Date",
+            "Dissolution Date", "City", "State/Province", "Address Country",
+            "Employees Min", "Employees Max", "Entity Structure", "Business Type",
+            "Website", "Source Dataset", "Address Line 1", "Postal Code",
+            "Business Number", "Language", "Address Line 2", "Industry System",
+        ])
+        for r in rows:
+            writer.writerow([
+                r[0] or "", r[1] or "", r[2] or "", r[3] or "", r[4] or "",
+                r[5] or "", r[6] or "", r[7], str(r[8]) if r[8] else "",
+                str(r[9]) if r[9] else "", r[10] or "", r[11] or "", r[12] or "",
+                r[13] if r[13] is not None else "", r[14] if r[14] is not None else "",
+                r[15] or "", r[16] or "", r[17] or "", r[18] or "",
+                r[19] or "", r[20] or "", r[21] or "", r[22] or "",
+                r[23] or "", r[24] or "",
+            ])
+
+        filename = f"l2b_selected_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.csv"
         return Response(
             content=output.getvalue(),
             media_type="text/csv",

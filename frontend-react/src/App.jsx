@@ -6,12 +6,12 @@ import Results from './components/Results'
 import DetailsModal from './components/DetailsModal'
 import AddCompanyModal from './components/AddCompanyModal'
 import ImportModal from './components/ImportModal'
+import AnalyticsModal from './components/AnalyticsModal'
 import Footer from './components/Footer'
 
 function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('l2b-theme') || 'dark')
 
-  // Apply theme class before paint to avoid flash
   useLayoutEffect(() => {
     document.documentElement.classList.toggle('light', theme === 'light')
     localStorage.setItem('l2b-theme', theme)
@@ -34,6 +34,7 @@ function App() {
   const [showDetails, setShowDetails] = useState(false)
   const [showAddCompany, setShowAddCompany] = useState(false)
   const [showImport, setShowImport] = useState(false)
+  const [showAnalytics, setShowAnalytics] = useState(false)
 
   useEffect(() => {
     fetch('/api/companies/stats').then(r => r.ok ? r.json() : null).then(d => d && setCompanyStats(d)).catch(() => {})
@@ -62,10 +63,13 @@ function App() {
     handleSearch({ ...lastSearch, page })
   }, [handleSearch, lastSearch])
 
+  const handleSort = useCallback((sortBy, sortOrder) => {
+    handleSearch({ ...lastSearch, sort_by: sortBy, sort_order: sortOrder, page: 1 })
+  }, [handleSearch, lastSearch])
+
   const handleRowClick = (item) => {
     setSelected(item)
     setShowDetails(true)
-    // Background fetch: get canonical data with any stored edits applied
     fetch(`/api/companies/${item.company_id}`)
       .then(r => r.ok ? r.json() : null)
       .then(data => { if (data) setSelected(data) })
@@ -106,11 +110,17 @@ function App() {
     return `/api/companies/export/csv?${qs}`
   }
 
+  const buildExportPdfUrl = () => {
+    const qs = new URLSearchParams(lastSearch).toString()
+    return `/api/companies/export/pdf?${qs}`
+  }
+
   return (
     <div className="app">
       <Header
         onAdminClick={() => setShowImport(true)}
         onAddCompany={() => setShowAddCompany(true)}
+        onAnalyticsClick={() => setShowAnalytics(true)}
         theme={theme}
         onToggleTheme={toggleTheme}
       />
@@ -130,7 +140,11 @@ function App() {
         onRowClick={handleRowClick}
         onPageChange={handlePageChange}
         onExportCsv={() => window.open(buildExportUrl(), '_blank')}
+        onExportPdf={() => window.open(buildExportPdfUrl(), '_blank')}
         onAddCompany={() => setShowAddCompany(true)}
+        sortBy={lastSearch.sort_by || 'legal_name'}
+        sortOrder={lastSearch.sort_order || 'asc'}
+        onSort={handleSort}
       />
 
       <Footer />
@@ -152,6 +166,10 @@ function App() {
 
       {showImport && (
         <ImportModal onClose={() => setShowImport(false)} />
+      )}
+
+      {showAnalytics && (
+        <AnalyticsModal onClose={() => setShowAnalytics(false)} />
       )}
     </div>
   )
