@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 function Field({ label, value, mono }) {
   return (
@@ -48,14 +48,23 @@ function CompanyDetail({ item, onUpdate, onClose }) {
   const [saveError, setSaveError] = useState(null)
   const [history, setHistory] = useState(null)
   const [historyLoading, setHistoryLoading] = useState(false)
+  const editingRef = useRef(false)
+  editingRef.current = editMode
 
+  // Reset all state when a different company opens
   useEffect(() => {
-    setForm({ ...item })
     setEditMode(false)
+    setForm({ ...item })
     setSaveError(null)
     setTab('details')
     setHistory(null)
   }, [item.company_id])
+
+  // Sync form when canonical data arrives from background fetch (same company, not editing)
+  useEffect(() => {
+    if (!editingRef.current) setForm({ ...item })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item])
 
   function handleField(e) {
     const { name, value } = e.target

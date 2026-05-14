@@ -224,6 +224,17 @@ async def setup_db():
         except Exception as e:
             print(f"DB setup ERROR ({table_name}): {e}")
 
+    # Additive column migrations — safe to re-run on every startup
+    _MIGRATIONS = [
+        "ALTER TABLE company_edits ADD COLUMN IF NOT EXISTS editor_note TEXT",
+    ]
+    for migration in _MIGRATIONS:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(migration))
+        except Exception as e:
+            print(f"DB migration note: {e}")
+
 # =============================================================================
 # HELPERS
 # =============================================================================
@@ -1305,8 +1316,34 @@ async def search_companies(
         if has_more and total_pages <= page:
             total_pages = page + 1
 
+        data = [row_to_company_dict(r) for r in rows]
+
+        # Apply company_edits overlays so edited records show current values in list
+        if data:
+            all_ids = [d["company_id"] for d in data]
+            try:
+                ov_rows = db.execute(
+                    text("""
+                        SELECT DISTINCT ON (company_id, field_name)
+                            company_id, field_name, new_value
+                        FROM company_edits
+                        WHERE company_id = ANY(:ids)
+                        ORDER BY company_id, field_name, edited_at DESC
+                    """),
+                    {"ids": all_ids}
+                ).fetchall()
+                override_map: dict = {}
+                for cid, field, val in ov_rows:
+                    override_map.setdefault(cid, {})[field] = val
+                for d in data:
+                    for field, val in override_map.get(d["company_id"], {}).items():
+                        if field in d:
+                            d[field] = val
+            except Exception as ov_err:
+                print(f"WARN overlay in search: {ov_err}")
+
         return {
-            "data": [row_to_company_dict(r) for r in rows],
+            "data": data,
             "pagination": {
                 "page": page,
                 "limit": limit,
