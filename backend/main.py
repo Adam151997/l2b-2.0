@@ -114,7 +114,7 @@ COMPANY_SORT_COLS = {
     "legal_name": "legal_name",
     "country": "country",
     "registration_date": "registration_date",
-    "employees_max": "COALESCE(employees_max, 0)",
+    "employees_max": "employees_max",  # must be a plain column name — UNION ORDER BY forbids expressions
 }
 
 EDITABLE_COMPANY_FIELDS = {
@@ -211,10 +211,13 @@ def get_db():
 COMPANY_SELECT = f"""
     SELECT company_id, company_name, doing_business_as, country, industry_codes,
            industry_codes_raw, status, TRUE,
-           NULLIF(TRIM(incorporation_date), '')::date,
+           CASE WHEN COALESCE(TRIM(incorporation_date),'') ~ '^[0-9]{{4}}[-/][0-9]{{2}}[-/][0-9]{{2}}'
+                THEN TRIM(incorporation_date)::date ELSE NULL END,
            NULL::date, city, state_province, country,
-           NULLIF(TRIM(director_min), '')::numeric,
-           NULLIF(TRIM(director_max), '')::numeric,
+           CASE WHEN COALESCE(TRIM(director_min),'') ~ '^[0-9]+([.][0-9]+)?$'
+                THEN TRIM(director_min)::numeric ELSE NULL END,
+           CASE WHEN COALESCE(TRIM(director_max),'') ~ '^[0-9]+([.][0-9]+)?$'
+                THEN TRIM(director_max)::numeric ELSE NULL END,
            entity_type, business_types,
            url, source, address_line1, postal_code, business_numbers, 'en', address_line2, NULL
     FROM {COMPANY_TABLE}
@@ -232,13 +235,16 @@ _MASTER_COMPANY_COLS = """
     industry_codes_raw AS industry_description,
     status,
     TRUE::boolean AS is_active,
-    NULLIF(TRIM(incorporation_date), '')::date AS registration_date,
+    CASE WHEN COALESCE(TRIM(incorporation_date),'') ~ '^[0-9]{4}[-/][0-9]{2}[-/][0-9]{2}'
+         THEN TRIM(incorporation_date)::date ELSE NULL END AS registration_date,
     NULL::date AS dissolution_date,
     city AS address_city,
     state_province AS address_state,
     country AS address_country,
-    NULLIF(TRIM(director_min), '')::numeric AS employees_min,
-    NULLIF(TRIM(director_max), '')::numeric AS employees_max,
+    CASE WHEN COALESCE(TRIM(director_min),'') ~ '^[0-9]+([.][0-9]+)?$'
+         THEN TRIM(director_min)::numeric ELSE NULL END AS employees_min,
+    CASE WHEN COALESCE(TRIM(director_max),'') ~ '^[0-9]+([.][0-9]+)?$'
+         THEN TRIM(director_max)::numeric ELSE NULL END AS employees_max,
     entity_type AS entity_structure,
     business_types AS business_type,
     url AS company_url,
@@ -751,7 +757,10 @@ async def export_companies_csv(
             SELECT {_USER_COMPANY_COLS} FROM {USER_COMPANIES_TABLE} {user_where}
             ORDER BY {col} {order} NULLS LAST LIMIT 10000
         """
-        rows = db.execute(text(union_query), params).fetchall()
+        try:
+            rows = db.execute(text(union_query), params).fetchall()
+        except Exception as qe:
+            raise HTTPException(status_code=500, detail=f"Query error: {type(qe).__name__}: {qe}")
 
         output = io.StringIO()
         writer = csv.writer(output)
@@ -817,7 +826,10 @@ async def export_companies_pdf(  # noqa: C901
             SELECT {_USER_COMPANY_COLS} FROM {USER_COMPANIES_TABLE} {user_where}
             ORDER BY {col} {order} NULLS LAST LIMIT 500
         """
-        rows = db.execute(text(union_query), params).fetchall()
+        try:
+            rows = db.execute(text(union_query), params).fetchall()
+        except Exception as qe:
+            raise HTTPException(status_code=500, detail=f"Query error: {type(qe).__name__}: {qe}")
 
         pdf = FPDF(orientation="L", unit="mm", format="A4")
         pdf.set_margins(8, 8, 8)
