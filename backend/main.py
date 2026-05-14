@@ -14,7 +14,11 @@ import csv
 import io
 from datetime import datetime
 import uuid
-from fpdf import FPDF
+try:
+    from fpdf import FPDF
+    _FPDF_OK = True
+except ImportError:
+    _FPDF_OK = False
 
 load_dotenv()
 
@@ -788,7 +792,7 @@ def _safe_pdf(s, maxlen=None):
 
 
 @app.get("/api/companies/export/pdf")
-async def export_companies_pdf(
+async def export_companies_pdf(  # noqa: C901
     q: Optional[str] = Query(None),
     country: Optional[str] = Query(None),
     industry: Optional[str] = Query(None),
@@ -797,6 +801,8 @@ async def export_companies_pdf(
     sort_by: str = Query("legal_name"),
     sort_order: str = Query("asc"),
 ):
+    if not _FPDF_OK:
+        raise HTTPException(status_code=501, detail="PDF export unavailable (fpdf2 not installed)")
     db_gen = get_db()
     db: Session = next(db_gen)
     try:
