@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 
-function CompanyImportBox({ adminPassword }) {
+function CompanyImportBox() {
   const [file, setFile] = useState(null)
   const [status, setStatus] = useState(null)
   const [progress, setProgress] = useState(0)
@@ -24,7 +24,6 @@ function CompanyImportBox({ adminPassword }) {
     try {
       const res = await fetch('/api/companies/import', {
         method: 'POST',
-        headers: { 'X-Admin-Password': adminPassword },
         body: form,
       })
       const data = await res.json()
@@ -37,9 +36,7 @@ function CompanyImportBox({ adminPassword }) {
       setStatus('processing')
       const jobId = data.job_id
       pollRef.current = setInterval(async () => {
-        const pr = await fetch(`/api/companies/import/status/${jobId}`, {
-          headers: { 'X-Admin-Password': adminPassword },
-        })
+        const pr = await fetch(`/api/companies/import/status/${jobId}`)
         const pData = await pr.json()
         if (pData.total > 0) setProgress(Math.round((pData.processed / pData.total) * 100))
         if (pData.status === 'completed' || pData.status === 'failed') {
@@ -60,7 +57,7 @@ function CompanyImportBox({ adminPassword }) {
 
   return (
     <div className="import-box">
-      <div className="import-box-title" style={{ color: 'var(--blue)' }}>Import Companies</div>
+      <div className="import-box-title">Import Companies</div>
       <div className="import-box-sub">
         CSV must include: <code>legal_name</code>, <code>country</code> (ISO-3, e.g. GBR).
         Optional: dba_name, status, industry_code, industry_description, address_city,
@@ -126,24 +123,6 @@ function CompanyImportBox({ adminPassword }) {
 }
 
 function ImportModal({ onClose }) {
-  const [authenticated, setAuthenticated] = useState(false)
-  const [password, setPassword] = useState('')
-  const [authError, setAuthError] = useState('')
-  const [adminPw, setAdminPw] = useState('')
-
-  async function handleLogin(e) {
-    e.preventDefault()
-    const res = await fetch('/api/import/history', {
-      headers: { 'X-Admin-Password': password },
-    })
-    if (res.ok) {
-      setAdminPw(password)
-      setAuthenticated(true)
-    } else {
-      setAuthError('Invalid admin password')
-    }
-  }
-
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal wide">
@@ -154,30 +133,8 @@ function ImportModal({ onClose }) {
           </div>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
-
         <div className="modal-body">
-          {!authenticated ? (
-            <div className="admin-login">
-              <div className="admin-icon">🔐</div>
-              <h3>Admin Access</h3>
-              <p>Enter the admin password to access the import panel</p>
-              <form className="admin-form" onSubmit={handleLogin}>
-                <input
-                  className="field-input"
-                  type="password"
-                  placeholder="Admin password"
-                  value={password}
-                  onChange={e => { setPassword(e.target.value); setAuthError('') }}
-                />
-                <button className="btn btn-primary" type="submit">Login</button>
-              </form>
-              {authError && (
-                <div style={{ color: 'var(--red)', fontSize: 13, marginTop: 12 }}>{authError}</div>
-              )}
-            </div>
-          ) : (
-            <CompanyImportBox adminPassword={adminPw} />
-          )}
+          <CompanyImportBox />
         </div>
       </div>
     </div>
