@@ -831,51 +831,50 @@ async def export_companies_pdf(  # noqa: C901
         except Exception as qe:
             raise HTTPException(status_code=500, detail=f"Query error: {type(qe).__name__}: {qe}")
 
-        pdf = FPDF(orientation="L", unit="mm", format="A4")
-        pdf.set_margins(8, 8, 8)
-        pdf.add_page()
+        try:
+            pdf = FPDF(orientation="L", unit="mm", format="A4")
+            pdf.set_margins(8, 8, 8)
+            pdf.add_page()
 
-        # Title
-        pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(0, 8, "L2B.click — Company Export", ln=True, align="C")
-        pdf.set_font("Helvetica", "", 7)
-        pdf.cell(0, 5,
-            f"Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC  |  {len(rows)} records",
-            ln=True, align="C")
-        pdf.ln(3)
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.cell(0, 8, "L2B.click - Company Export",
+                     new_x="LMARGIN", new_y="NEXT", align="C")
+            pdf.set_font("Helvetica", "", 7)
+            pdf.cell(0, 5,
+                     f"Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC  |  {len(rows)} records",
+                     new_x="LMARGIN", new_y="NEXT", align="C")
+            pdf.ln(3)
 
-        col_widths = [80, 18, 68, 32, 25, 50]
-        headers = ["Company Name", "Country", "Industry", "City", "Status", "Website"]
+            col_widths = [80, 18, 68, 32, 25, 50]
+            col_headers = ["Company Name", "Country", "Industry", "City", "Status", "Website"]
 
-        # Header row
-        pdf.set_font("Helvetica", "B", 7)
-        pdf.set_fill_color(40, 40, 65)
-        pdf.set_text_color(240, 240, 255)
-        for w, h in zip(col_widths, headers):
-            pdf.cell(w, 6, h, border=0, fill=True)
-        pdf.ln()
-
-        # Data rows
-        pdf.set_text_color(20, 20, 30)
-        for i, r in enumerate(rows):
-            if i % 2 == 0:
-                pdf.set_fill_color(245, 245, 250)
-            else:
-                pdf.set_fill_color(255, 255, 255)
-            pdf.set_font("Helvetica", "", 6.5)
-            vals = [
-                _safe_pdf(r[1], 60),
-                _safe_pdf(r[3], 6),
-                _safe_pdf(r[5], 55),
-                _safe_pdf(r[10], 28),
-                _safe_pdf(r[6], 20),
-                _safe_pdf(r[17], 48),
-            ]
-            for w, v in zip(col_widths, vals):
-                pdf.cell(w, 5, v, border=0, fill=True)
+            pdf.set_font("Helvetica", "B", 7)
+            pdf.set_fill_color(40, 40, 65)
+            pdf.set_text_color(240, 240, 255)
+            for w, hdr in zip(col_widths, col_headers):
+                pdf.cell(w, 6, hdr, border=0, fill=True)
             pdf.ln()
 
-        pdf_bytes = bytes(pdf.output())
+            pdf.set_text_color(20, 20, 30)
+            for i, r in enumerate(rows):
+                pdf.set_fill_color(245, 245, 250) if i % 2 == 0 else pdf.set_fill_color(255, 255, 255)
+                pdf.set_font("Helvetica", "", 6.5)
+                vals = [
+                    _safe_pdf(r[1], 60),
+                    _safe_pdf(r[3], 6),
+                    _safe_pdf(r[5], 55),
+                    _safe_pdf(r[10], 28),
+                    _safe_pdf(r[6], 20),
+                    _safe_pdf(r[17], 48),
+                ]
+                for w, v in zip(col_widths, vals):
+                    pdf.cell(w, 5, v, border=0, fill=True)
+                pdf.ln()
+
+            pdf_bytes = bytes(pdf.output())
+        except Exception as pe:
+            raise HTTPException(status_code=500, detail=f"PDF generation error: {type(pe).__name__}: {pe}")
+
         filename = f"l2b_companies_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.pdf"
         return Response(
             content=pdf_bytes,
