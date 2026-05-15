@@ -106,7 +106,7 @@ function CompaniesTable({ results, onRowClick, sortBy, sortOrder, onSort, select
                 <div className="name-cell" title={item.legal_name}>{item.legal_name}</div>
                 {item.dba_name && <div className="sub-name" title={item.dba_name}>{item.dba_name}</div>}
               </td>
-              <td><span className="country-badge">{item.country || '—'}</span></td>
+              <td><span className="country-badge">{item.address_country || item.country || '—'}</span></td>
               <td>
                 <div className="industry-cell" title={item.industry_description}>
                   {item.industry_description || '—'}

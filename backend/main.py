@@ -209,8 +209,8 @@ def get_db():
         db.close()
 
 COMPANY_SELECT = f"""
-    SELECT company_id, company_name, doing_business_as, country, industry_codes,
-           industry_codes_raw, status, TRUE,
+    SELECT company_id, company_name, doing_business_as, country, industry_codes_raw,
+           industry_codes, status, TRUE,
            CASE WHEN COALESCE(TRIM(incorporation_date),'') ~ '^[0-9]{{4}}[-/][0-9]{{2}}[-/][0-9]{{2}}'
                 THEN TRIM(incorporation_date)::date ELSE NULL END,
            NULL::date, city, state_province, country,
@@ -231,8 +231,8 @@ _MASTER_COMPANY_COLS = """
     company_name AS legal_name,
     doing_business_as AS dba_name,
     country,
-    industry_codes AS industry_code,
-    industry_codes_raw AS industry_description,
+    industry_codes_raw AS industry_code,
+    industry_codes AS industry_description,
     status,
     TRUE::boolean AS is_active,
     CASE WHEN COALESCE(TRIM(incorporation_date),'') ~ '^[0-9]{4}[-/][0-9]{2}[-/][0-9]{2}'
@@ -308,7 +308,7 @@ def build_master_companies_where(q=None, country=None, industry=None, source_dat
         conditions.append("country = :country")
         params["country"] = country
     if industry:
-        conditions.append("industry_codes_raw ILIKE :industry")
+        conditions.append("industry_codes ILIKE :industry")
         params["industry"] = f"%{industry}%"
     if source_dataset:
         conditions.append("source = :source_dataset")
@@ -579,7 +579,12 @@ async def get_company_filters():
     try:
         db = SessionLocal()
         rows = db.execute(
-            text(f"SELECT DISTINCT country FROM {COMPANY_TABLE} WHERE country IS NOT NULL ORDER BY country LIMIT 200")
+            text(f"""
+                SELECT DISTINCT country FROM {COMPANY_TABLE} WHERE country IS NOT NULL
+                UNION
+                SELECT DISTINCT country FROM user_companies WHERE country IS NOT NULL
+                ORDER BY country
+            """)
         ).fetchall()
         db.close()
         return {"countries": [r[0] for r in rows], "source_datasets": []}
